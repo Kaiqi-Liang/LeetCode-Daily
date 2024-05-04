@@ -15,7 +15,7 @@ impl TypeMapKey for MemberList {
     type Value = SharedMemberMap;
 }
 
-const CHANNEL_ID: u64 = 1235536271925973073;
+const LEETCODE_CHANNEL_ID: u64 = 1235529498770935840;
 
 struct Handler;
 
@@ -87,7 +87,7 @@ impl EventHandler for Handler {
                             message.mention(user);
                         }
                     }
-                    if let Err(why) = ChannelId::new(CHANNEL_ID)
+                    if let Err(why) = ChannelId::new(LEETCODE_CHANNEL_ID)
                         .say(ctx.clone().http, message.build())
                         .await
                     {
@@ -118,7 +118,7 @@ async fn schedule_daily_reset(ctx: Context) {
                 .expect("Next midnight UTC is in the past");
             time::sleep(StdDuration::from_secs(num_seconds_until_utc_midnight)).await;
 
-            if let Err(why) = ChannelId::new(CHANNEL_ID)
+            if let Err(why) = ChannelId::new(LEETCODE_CHANNEL_ID)
                 .say(ctx.clone().http, MessageBuilder::new()
                     .push("Share your code in the format below to confirm your completion of today's ")
                     .push_named_link("LeetCode", "https://leetcode.com/problemset\n")
