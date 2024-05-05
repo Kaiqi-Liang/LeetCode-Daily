@@ -58,11 +58,13 @@ impl EventHandler for Handler {
                 let mut message = MessageBuilder::new();
                 if let Some(user_ids) = member_map.get_mut(guild_id) {
                     if let Some((user, completed)) = user_ids.get_mut(&msg.author.id) {
-                        message
-                            .push("Congrats to ")
-                            .mention(user)
-                            .push(" for completing today's challenge\n");
-                        *completed = true;
+                        if !*completed {
+                            message
+                                .push("Congrats to ")
+                                .mention(user)
+                                .push(" for completing today's challenge\n");
+                            *completed = true;
+                        }
                     }
                 }
                 if let Some(user_ids) = member_map.get(guild_id) {
@@ -122,7 +124,7 @@ async fn schedule_daily_reset(ctx: Context) {
             if let Err(why) = ChannelId::new(LEETCODE_CHANNEL_ID)
                 .say(ctx.clone().http, MessageBuilder::new()
                     .push("Share your code in the format below to confirm your completion of today's ")
-                    .push_named_link("LeetCode", "https://leetcode.com/problemset\n")
+                    .push_named_link("LeetCode", "https://leetcode.com/problemset")
                     .push(" Daily @everyone\n")
                     .push_safe("||```code```||")
                     .build())
