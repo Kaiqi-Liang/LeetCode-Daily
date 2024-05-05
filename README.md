@@ -12,7 +12,6 @@ On the **Bot** page under **TOKEN**, click "Reset Token" to generate a new bot t
 
 ```bash
 export DISCORD_TOKEN=discord_token
-cargo r
 ```
 
 The minimum supported Rust version (MSRV) is Rust 1.74, check `cargo` is installed and meet the version requirement
@@ -31,4 +30,17 @@ If a previous version of Rust installed via `rustup` already exists, it can be u
 
 ```bash
 rustup update
+```
+
+Run the bot in debug mode
+
+```bash
+cargo r
+```
+
+Or compile it with optimisation and run in release mode
+
+```bash
+cargo b --release
+target/release/leetcode_daily
 ```
