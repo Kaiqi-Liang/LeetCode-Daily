@@ -116,13 +116,14 @@ async fn schedule_daily_reset(ctx: Context) {
                 .num_seconds()
                 .try_into()
                 .expect("Next midnight UTC is in the past");
-            time::sleep(StdDuration::from_secs(num_seconds_until_utc_midnight)).await;
+            // Add 1 to make sure by the time the loop tries to schedule it again it will be the next day
+            time::sleep(StdDuration::from_secs(num_seconds_until_utc_midnight + 1)).await;
 
             if let Err(why) = ChannelId::new(LEETCODE_CHANNEL_ID)
                 .say(ctx.clone().http, MessageBuilder::new()
                     .push("Share your code in the format below to confirm your completion of today's ")
                     .push_named_link("LeetCode", "https://leetcode.com/problemset\n")
-                    .push(" Daily\n")
+                    .push(" Daily @everyone\n")
                     .push_safe("||```code```||")
                     .build())
                 .await
