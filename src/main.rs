@@ -107,14 +107,16 @@ impl EventHandler for Handler {
                             message.mention(user);
                         }
                     }
-                } else if msg.content == "!scores" {
+                } else if msg.content == "/scores" {
                     construct_leader_board(users, &mut message);
+                } else {
+                    return;
                 }
                 if let Err(why) = ChannelId::new(LEETCODE_CHANNEL_ID)
                     .say(ctx.clone().http, message.build())
                     .await
                 {
-                    println!("Error sending message: {why:?}");
+                    println!("Error sending reply message: {why:?}");
                 }
             }
         }
@@ -190,7 +192,7 @@ async fn schedule_daily_reset(ctx: Context) {
                         .say(ctx.clone().http, message.build())
                         .await
                     {
-                        println!("Error sending message: {why:?}");
+                        println!("Error sending daily message: {why:?}");
                     }
                 }
             }

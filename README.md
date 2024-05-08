@@ -44,3 +44,9 @@ Or compile it with optimisation and run in release mode
 cargo b --release
 target/release/leetcode_daily
 ```
+
+To update the code and deploy it, use the `make` command which kills the current executing process and runs the above 2 commands
+
+```bash
+make deploy
+```

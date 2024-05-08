@@ -1,4 +1,4 @@
 deploy:
-	pkill leetcode_daily
+	pkill leetcode_daily || true
 	cargo b --release
-	/target/release/leetcode_daily &
+	target/release/leetcode_daily &
