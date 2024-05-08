@@ -9,6 +9,7 @@ use serenity::{
 use std::{collections::HashMap, env::var, sync::Arc, time::Duration as StdDuration};
 use tokio::{main, spawn, time};
 
+// TODO: change tuple to struct where each user will have a score
 type SharedMemberMap = Arc<Mutex<HashMap<GuildId, HashMap<UserId, (User, bool)>>>>;
 struct MemberList;
 impl TypeMapKey for MemberList {
@@ -19,6 +20,7 @@ const LEETCODE_CHANNEL_ID: u64 = 1235529498770935840;
 
 struct Handler;
 
+// TODO: Add command to check scores
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
