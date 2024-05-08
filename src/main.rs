@@ -164,19 +164,33 @@ async fn schedule_daily_reset(ctx: Context) {
             if let Some(member_map) = ctx.data.write().await.get_mut::<MemberList>() {
                 let mut member_map = member_map.lock().await;
                 for users in member_map.values_mut() {
-                    if let Err(why) = ChannelId::new(LEETCODE_CHANNEL_ID)
-                        .say(ctx.clone().http, construct_leader_board(users, MessageBuilder::new()
+                    let mut message = MessageBuilder::new();
+                    message.push("Yesterday ");
+                    let mut penalties = false;
+                    for user in users.values_mut() {
+                        if !user.completed {
+                            penalties = true;
+                            message.mention(&user.user);
+                            user.score -= 1;
+                        } else {
+                            user.completed = false;
+                        }
+                    }
+                    message.push(if penalties {
+                        " did not complete the challenge :( each lost 1 point as a penalty"
+                    } else {
+                        " everyone completed the challenge! Awesome job to start a new day!"
+                    });
+                    construct_leader_board(users, message
                             .push("Share your code in the format below to confirm your completion of today's ")
                             .push_named_link("LeetCode", "https://leetcode.com/problemset")
                             .push(" Daily @everyone\n")
-                            .push_safe("||```code```||\n")
-                            ).build())
+                            .push_safe("||```code```||\n"));
+                    if let Err(why) = ChannelId::new(LEETCODE_CHANNEL_ID)
+                        .say(ctx.clone().http, message.build())
                         .await
                     {
                         println!("Error sending message: {why:?}");
-                    }
-                    for user in users.values_mut() {
-                        user.completed = false;
                     }
                 }
             }
