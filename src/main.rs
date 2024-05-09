@@ -35,44 +35,38 @@ impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
         if let Some(member_map) = ctx.data.write().await.get::<MemberList>() {
-            if let Ok(mut user_status) = File::open("user_data.json") {
-                let mut contents = String::new();
-                user_status
-                    .read_to_string(&mut contents)
-                    .expect("Data is not valid UTF-8");
-                let guild_local: HashMap<GuildId, HashMap<UserId, usize>> =
-                    serde_json::from_str(&contents).expect("Malform data");
-                for guild in ready.guilds {
-                    if let Ok(members) = guild.id.members(&ctx.http, None, None).await {
-                        member_map.lock().await.insert(
-                            guild.id,
-                            members
-                                .into_iter()
-                                .filter_map(|member| {
-                                    let user = member.user;
-                                    if user.bot {
-                                        None
-                                    } else {
-                                        Some((
-                                            user.id,
-                                            UserStatus {
-                                                user: user.clone(),
-                                                completed: false,
-                                                score: if let Some(&score) = guild_local
-                                                    .get(&guild.id)
-                                                    .and_then(|users| users.get(&user.id))
-                                                {
-                                                    score
-                                                } else {
-                                                    0
-                                                },
+            let guild_local = read_user_data();
+            for guild in ready.guilds {
+                let guild_id = guild.id;
+                if let Ok(members) = guild.id.members(&ctx.http, None, None).await {
+                    member_map.lock().await.insert(
+                        guild.id,
+                        members
+                            .into_iter()
+                            .filter_map(|member| {
+                                let user = member.user;
+                                if user.bot {
+                                    None
+                                } else {
+                                    Some((
+                                        user.id,
+                                        UserStatus {
+                                            user: user.clone(),
+                                            completed: false,
+                                            score: if let Some(&score) = guild_local
+                                                .get(&guild_id)
+                                                .and_then(|users| users.get(&user.id))
+                                            {
+                                                score
+                                            } else {
+                                                0
                                             },
-                                        ))
-                                    }
-                                })
-                                .collect::<HashMap<UserId, UserStatus>>(),
-                        );
-                    }
+                                        },
+                                    ))
+                                }
+                            })
+                            .collect::<HashMap<UserId, UserStatus>>(),
+                    );
                 }
             }
         }
@@ -89,12 +83,19 @@ impl EventHandler for Handler {
                 let mut message = MessageBuilder::new();
                 if msg.content.contains("||") && msg.content.contains("```") {
                     if let Some(user) = users.get_mut(&msg.author.id) {
+                        let mut guild_local = read_user_data();
                         if !user.completed {
                             user.completed = true;
                             let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1)
                                 .try_into()
                                 .expect("Next midnight UTC is in the past");
                             user.score += score;
+                            guild_local
+                                .entry(*guild_id)
+                                .and_modify(|guild| {
+                                    guild.insert(msg.author.id, user.score);
+                                })
+                                .or_insert(HashMap::new());
                             message
                                 .push("Congrats to ")
                                 .mention(&user.user)
@@ -141,6 +142,15 @@ impl EventHandler for Handler {
     }
 }
 
+fn read_user_data() -> HashMap<GuildId, HashMap<UserId, usize>> {
+    let mut user_status = File::open("user_data.json").expect("Failed to read user data");
+    let mut contents = String::new();
+    user_status
+        .read_to_string(&mut contents)
+        .expect("Data is not valid UTF-8");
+    serde_json::from_str(&contents).expect("Malform data")
+}
+
 fn construct_leader_board<'a>(
     users: &Users,
     message: &'a mut MessageBuilder,
@@ -183,16 +193,23 @@ async fn schedule_daily_reset(ctx: Context) {
 
             if let Some(member_map) = ctx.data.write().await.get_mut::<MemberList>() {
                 let mut member_map = member_map.lock().await;
-                for users in member_map.values_mut() {
+                let mut guild_local = read_user_data();
+                for (guild_id, users) in member_map.iter_mut() {
                     let mut message = MessageBuilder::new();
                     message.push("Yesterday ");
                     let mut penalties = false;
-                    for user in users.values_mut() {
+                    for (user_id, user) in users.iter_mut() {
                         if !user.completed {
                             penalties = true;
                             message.mention(&user.user);
                             if user.score > 0 {
                                 user.score -= 1;
+                                guild_local
+                                    .entry(*guild_id)
+                                    .and_modify(|guild| {
+                                        guild.insert(*user_id, user.score);
+                                    })
+                                    .or_insert(HashMap::new());
                             }
                         } else {
                             user.completed = false;
