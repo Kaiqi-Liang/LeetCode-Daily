@@ -58,6 +58,9 @@ impl EventHandler for Handler {
                             .into_iter()
                             .filter_map(|member| {
                                 let user = member.user;
+                                let user_data = guild_local
+                                    .get(&guild_id)
+                                    .and_then(|users| users.get(&user.id));
                                 if user.bot {
                                     None
                                 } else {
@@ -65,15 +68,9 @@ impl EventHandler for Handler {
                                         user.id,
                                         UserStatus {
                                             user: user.clone(),
-                                            completed: false,
-                                            score: if let Some(user) = guild_local
-                                                .get(&guild_id)
-                                                .and_then(|users| users.get(&user.id))
-                                            {
-                                                user.score
-                                            } else {
-                                                0
-                                            },
+                                            completed: user_data
+                                                .map_or(false, |data| data.completed),
+                                            score: user_data.map_or(0, |data| data.score),
                                         },
                                     ))
                                 }
