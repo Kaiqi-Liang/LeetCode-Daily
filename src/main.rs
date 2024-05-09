@@ -1,45 +1,7 @@
-use chrono::{TimeDelta, TimeZone, Utc};
-use serde::{Deserialize, Serialize};
-use serenity::{
-    async_trait,
-    model::prelude::*,
-    prelude::*,
-    utils::{EmbedMessageBuilding, MessageBuilder},
-    Error,
-};
-use std::{
-    collections::HashMap,
-    env::var,
-    fs::File,
-    io::{Read, Write},
-    sync::Arc,
-    time::Duration as StdDuration,
-};
-use tokio::{main, spawn, time};
-
-type Users = HashMap<UserId, UserStatus>;
-type Guild = HashMap<GuildId, Users>;
-type SharedMemberMap = Arc<Mutex<Guild>>;
-type UserData = HashMap<GuildId, HashMap<UserId, Data>>;
-
-#[derive(Serialize, Deserialize)]
-struct Data {
-    completed: bool,
-    score: usize,
-}
-
-struct UserStatus {
-    user: User,
-    completed: bool,
-    score: usize,
-}
-
-struct MemberList;
-impl TypeMapKey for MemberList {
-    type Value = SharedMemberMap;
-}
-
-const LEETCODE_CHANNEL_ID: u64 = 1235529498770935840;
+use leetcode_daily::{respond, schedule_daily_reset, setup, SharedState, State};
+use serenity::{async_trait, model::prelude::*, prelude::*};
+use std::{collections::HashMap, env::var, error::Error, fs::OpenOptions, io::Read, sync::Arc};
+use tokio::{main, spawn};
 
 struct Handler;
 
@@ -47,232 +9,26 @@ struct Handler;
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
-        if let Some(member_map) = ctx.data.write().await.get::<MemberList>() {
-            let (_, guild_local) = read_user_data();
-            for guild in ready.guilds {
-                let guild_id = guild.id;
-                if let Ok(members) = guild.id.members(&ctx.http, None, None).await {
-                    member_map.lock().await.insert(
-                        guild.id,
-                        members
-                            .into_iter()
-                            .filter_map(|member| {
-                                let user = member.user;
-                                let user_data = guild_local
-                                    .get(&guild_id)
-                                    .and_then(|users| users.get(&user.id));
-                                if user.bot {
-                                    None
-                                } else {
-                                    Some((
-                                        user.id,
-                                        UserStatus {
-                                            user: user.clone(),
-                                            completed: user_data
-                                                .map_or(false, |data| data.completed),
-                                            score: user_data.map_or(0, |data| data.score),
-                                        },
-                                    ))
-                                }
-                            })
-                            .collect::<HashMap<UserId, UserStatus>>(),
-                    );
-                }
-            }
+        if let Err(why) = setup(&ctx, ready).await {
+            println!("Error setting up {why:?}");
         }
-        schedule_daily_reset(ctx).await;
+        spawn(async move {
+            if let Err(why) = schedule_daily_reset(ctx).await {
+                println!("Error scheduling {why:?}");
+            }
+        });
     }
 
     async fn message(&self, ctx: Context, msg: Message) {
-        if let Some(member_map) = ctx.data.write().await.get_mut::<MemberList>() {
-            let mut member_map = member_map.lock().await;
-            let guild_id = &msg
-                .guild_id
-                .expect("This message was not received over the gateway");
-            if let Some(users) = member_map.get_mut(guild_id) {
-                let mut message = MessageBuilder::new();
-                if msg.content.contains("||") && msg.content.contains("```") {
-                    if let Some(user) = users.get_mut(&msg.author.id) {
-                        let (mut user_data, mut guild_local) = read_user_data();
-                        if !user.completed {
-                            user.completed = true;
-                            let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1)
-                                .try_into()
-                                .expect("Next midnight UTC is in the past");
-                            user.score += score;
-                            guild_local
-                                .entry(*guild_id)
-                                .and_modify(|guild| {
-                                    guild.insert(
-                                        msg.author.id,
-                                        Data {
-                                            completed: true,
-                                            score: user.score,
-                                        },
-                                    );
-                                })
-                                .or_insert(HashMap::new());
-                            message
-                                .push("Congrats to ")
-                                .mention(&user.user)
-                                .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.score));
-                        }
-                        if let Err(why) = serde_json::to_string_pretty(&guild_local)
-                            .map(|data| user_data.write_all(data.as_bytes()))
-                        {
-                            println!("Error writing to file {why}");
-                        }
-                    }
-                    let users_not_yet_completed = users
-                        .values()
-                        .filter_map(|user| {
-                            if user.completed {
-                                None
-                            } else {
-                                Some(&user.user)
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    if users_not_yet_completed.is_empty() {
-                        message.push(
-                            "Everyone has finished today's challenge, let's Grow Together!\n",
-                        );
-                    } else {
-                        message.push("Still waiting for ");
-                        for user in users_not_yet_completed {
-                            message.mention(user);
-                        }
-                    }
-                } else if msg.content != "/scores" {
-                    return;
-                }
-                if let Err(why) = ChannelId::new(LEETCODE_CHANNEL_ID)
-                    .say(
-                        ctx.clone().http,
-                        construct_leaderboard(users, &mut message).build(),
-                    )
-                    .await
-                {
-                    println!("Error sending reply message: {why:?}");
-                }
-            }
+        if let Err(why) = respond(ctx, msg).await {
+            println!("Error responding to messages {why:?}");
         }
     }
-}
-
-fn read_user_data() -> (File, UserData) {
-    let mut user_data = File::open("user_data.json").expect("Failed to read user data");
-    let mut contents = String::new();
-    user_data
-        .read_to_string(&mut contents)
-        .expect("Data is not valid UTF-8");
-    (
-        user_data,
-        serde_json::from_str(&contents).expect("Malform data"),
-    )
-}
-
-fn construct_leaderboard<'a>(
-    users: &Users,
-    message: &'a mut MessageBuilder,
-) -> &'a mut MessageBuilder {
-    message.push("The current leaderboard:\n");
-    let mut leaderboard = users
-        .values()
-        .map(|user| (&user.user, user.score))
-        .collect::<Vec<_>>();
-    leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
-    for (user, score) in leaderboard {
-        message.push(format!("{}: {score}\n", user.name));
-    }
-    message
-}
-
-fn time_till_utc_midnight() -> TimeDelta {
-    Utc.from_utc_datetime(
-        &Utc::now()
-            .naive_utc()
-            .date()
-            .succ_opt()
-            .expect("Failed to get the next date")
-            .and_hms_opt(0, 0, 0)
-            .expect("Failed to get midnight time"),
-    )
-    .signed_duration_since(Utc::now())
-}
-
-async fn schedule_daily_reset(ctx: Context) {
-    spawn(async move {
-        loop {
-            // Add 1 to make sure by the time the loop tries to schedule it again it will be the next day
-            time::sleep(StdDuration::from_secs(
-                (time_till_utc_midnight().num_seconds() + 1)
-                    .try_into()
-                    .expect("Next midnight UTC is in the past"),
-            ))
-            .await;
-
-            if let Some(member_map) = ctx.data.write().await.get_mut::<MemberList>() {
-                let mut member_map = member_map.lock().await;
-                let (mut user_data, mut guild_local) = read_user_data();
-                for (guild_id, users) in member_map.iter_mut() {
-                    let mut message = MessageBuilder::new();
-                    message.push("Yesterday ");
-                    let mut penalties = false;
-                    for (user_id, user) in users.iter_mut() {
-                        if !user.completed {
-                            penalties = true;
-                            message.mention(&user.user);
-                            if user.score > 0 {
-                                user.score -= 1;
-                            }
-                        } else {
-                            user.completed = false;
-                        }
-                        guild_local
-                            .entry(*guild_id)
-                            .and_modify(|guild| {
-                                guild.insert(
-                                    *user_id,
-                                    Data {
-                                        completed: true,
-                                        score: user.score,
-                                    },
-                                );
-                            })
-                            .or_insert(HashMap::new());
-                        if let Err(why) = serde_json::to_string_pretty(&guild_local)
-                            .map(|data| user_data.write_all(data.as_bytes()))
-                        {
-                            println!("Error writing to file {why}");
-                        }
-                    }
-                    (message.push(if penalties {
-                        " did not complete the challenge :( each lost 1 point as a penalty"
-                    } else {
-                        " everyone completed the challenge! Awesome job to start a new day!"
-                    }))
-                    .push("\n\n");
-                    construct_leaderboard(users, message
-                            .push("Share your code in the format below to confirm your completion of today's ")
-                            .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                            .push(" Daily @everyone\n")
-                            .push_safe("||```code```||\n"));
-                    if let Err(why) = ChannelId::new(LEETCODE_CHANNEL_ID)
-                        .say(ctx.clone().http, message.build())
-                        .await
-                    {
-                        println!("Error sending daily message: {why:?}");
-                    }
-                }
-            }
-        }
-    });
 }
 
 #[main]
-async fn main() -> Result<(), Error> {
-    let token = var("DISCORD_TOKEN").expect("Expected a discord token in the environment");
+async fn main() -> Result<(), Box<dyn Error>> {
+    let token = var("DISCORD_TOKEN")?;
     let mut client = Client::builder(
         token,
         GatewayIntents::DIRECT_MESSAGES
@@ -281,12 +37,21 @@ async fn main() -> Result<(), Error> {
             | GatewayIntents::GUILD_MEMBERS,
     )
     .event_handler(Handler)
-    .await
-    .expect("Err creating client");
+    .await?;
 
     {
+        let mut database = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("user_data.json")?;
+        let mut contents = String::new();
+        database.read_to_string(&mut contents)?;
         let mut data = client.data.write().await;
-        data.insert::<MemberList>(Arc::new(Mutex::new(HashMap::new())));
+        data.insert::<State>(SharedState {
+            guild: Arc::new(Mutex::new(HashMap::new())),
+            database,
+            user_data: serde_json::from_str(&contents)?,
+        });
     }
 
     client.start().await?;
