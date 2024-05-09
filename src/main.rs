@@ -1,4 +1,5 @@
 use chrono::{TimeDelta, TimeZone, Utc};
+use serde::Deserialize;
 use serenity::{
     async_trait,
     model::prelude::*,
@@ -14,6 +15,13 @@ use tokio::{main, spawn, time};
 type Users = HashMap<UserId, UserStatus>;
 type Guild = HashMap<GuildId, Users>;
 type SharedMemberMap = Arc<Mutex<Guild>>;
+type UserData = HashMap<GuildId, HashMap<UserId, Data>>;
+
+#[derive(Deserialize)]
+struct Data {
+    completed: bool,
+    score: usize,
+}
 
 struct UserStatus {
     user: User,
@@ -53,11 +61,11 @@ impl EventHandler for Handler {
                                         UserStatus {
                                             user: user.clone(),
                                             completed: false,
-                                            score: if let Some(&score) = guild_local
+                                            score: if let Some(user) = guild_local
                                                 .get(&guild_id)
                                                 .and_then(|users| users.get(&user.id))
                                             {
-                                                score
+                                                user.score
                                             } else {
                                                 0
                                             },
@@ -93,7 +101,13 @@ impl EventHandler for Handler {
                             guild_local
                                 .entry(*guild_id)
                                 .and_modify(|guild| {
-                                    guild.insert(msg.author.id, user.score);
+                                    guild.insert(
+                                        msg.author.id,
+                                        Data {
+                                            completed: true,
+                                            score: user.score,
+                                        },
+                                    );
                                 })
                                 .or_insert(HashMap::new());
                             message
@@ -142,7 +156,7 @@ impl EventHandler for Handler {
     }
 }
 
-fn read_user_data() -> HashMap<GuildId, HashMap<UserId, usize>> {
+fn read_user_data() -> UserData {
     let mut user_status = File::open("user_data.json").expect("Failed to read user data");
     let mut contents = String::new();
     user_status
@@ -162,7 +176,7 @@ fn construct_leader_board<'a>(
         .collect::<Vec<_>>();
     leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
     for (user, score) in leaderboard {
-        message.push(format!("{user}: {score}\n"));
+        message.push(format!("{}: {score}\n", user.name));
     }
     message
 }
@@ -204,16 +218,22 @@ async fn schedule_daily_reset(ctx: Context) {
                             message.mention(&user.user);
                             if user.score > 0 {
                                 user.score -= 1;
-                                guild_local
-                                    .entry(*guild_id)
-                                    .and_modify(|guild| {
-                                        guild.insert(*user_id, user.score);
-                                    })
-                                    .or_insert(HashMap::new());
                             }
                         } else {
                             user.completed = false;
                         }
+                        guild_local
+                            .entry(*guild_id)
+                            .and_modify(|guild| {
+                                guild.insert(
+                                    *user_id,
+                                    Data {
+                                        completed: true,
+                                        score: user.score,
+                                    },
+                                );
+                            })
+                            .or_insert(HashMap::new());
                     }
                     (message.push(if penalties {
                         " did not complete the challenge :( each lost 1 point as a penalty"
