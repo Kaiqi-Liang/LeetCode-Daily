@@ -15,20 +15,19 @@ use std::{
 };
 use tokio::{sync::Mutex, time};
 
-type Users = HashMap<UserId, UserStatus>;
+type UserData = HashMap<GuildId, HashMap<UserId, Status>>;
 type Guild = HashMap<GuildId, Users>;
-pub type UserData = HashMap<GuildId, HashMap<UserId, Data>>;
+type Users = HashMap<UserId, UserStatus>;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Data {
+#[derive(Serialize, Deserialize)]
+pub struct Status {
     pub completed: bool,
     pub score: usize,
 }
 
 pub struct UserStatus {
     pub user: User,
-    pub completed: bool,
-    pub score: usize,
+    pub status: Status,
 }
 
 pub struct SharedState {
@@ -69,7 +68,7 @@ pub fn construct_leaderboard<'a>(
     message.push("The current leaderboard:\n");
     let mut leaderboard = users
         .values()
-        .map(|user| (&user.user, user.score))
+        .map(|user| (&user.user, user.status.score))
         .collect::<Vec<_>>();
     leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
     for (user, score) in leaderboard {
@@ -115,9 +114,11 @@ pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
                         Some((
                             user.id,
                             UserStatus {
-                                user: user.clone(),
-                                completed: user_data.map_or(false, |data| data.completed),
-                                score: user_data.map_or(0, |data| data.score),
+                                user,
+                                status: Status {
+                                    completed: user_data.map_or(false, |data| data.completed),
+                                    score: user_data.map_or(0, |data| data.score),
+                                },
                             },
                         ))
                     }
@@ -146,14 +147,14 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             message.push("Yesterday ");
             let mut penalties = false;
             for (user_id, user) in users.iter_mut() {
-                if !user.completed {
+                if !user.status.completed {
                     penalties = true;
                     message.mention(&user.user);
-                    if user.score > 0 {
-                        user.score -= 1;
+                    if user.status.score > 0 {
+                        user.status.score -= 1;
                     }
                 } else {
-                    user.completed = false;
+                    user.status.completed = false;
                 }
                 state
                     .user_data
@@ -161,9 +162,9 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                     .and_modify(|guild| {
                         guild.insert(
                             *user_id,
-                            Data {
+                            Status {
                                 completed: true,
-                                score: user.score,
+                                score: user.status.score,
                             },
                         );
                     })
@@ -176,8 +177,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                 } else {
                     " everyone completed the challenge! Awesome job to start a new day!"
                 })
-                .push("\n\n");
-            message
+                .push("\n\n")
                 .push("Share your code in the format below to confirm your completion of today's ")
                 .push_named_link("LeetCode", "https://leetcode.com/problemset")
                 .push(" Daily @everyone\n")
@@ -202,34 +202,35 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
     let mut message = MessageBuilder::new();
     if msg.content.contains("||") && msg.content.contains("```") {
         let user = users.get_mut(&msg.author.id).ok_or("No user in guild")?;
-        if user.completed {
+        if user.status.completed {
             return Ok(());
         }
-        user.completed = true;
+        user.status.completed = true;
         let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
-        user.score += score;
+        user.status.score += score;
         state
             .user_data
             .entry(*guild_id)
             .and_modify(|guild| {
                 guild.insert(
                     msg.author.id,
-                    Data {
+                    Status {
                         completed: true,
-                        score: user.score,
+                        score: user.status.score,
                     },
                 );
             })
             .or_insert(HashMap::new());
         write_to_database!(state);
+
         message
             .push("Congrats to ")
             .mention(&user.user)
-            .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.score));
+            .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.status.score));
         let users_not_yet_completed = users
             .values()
             .filter_map(|user| {
-                if user.completed {
+                if user.status.completed {
                     None
                 } else {
                     Some(&user.user)
