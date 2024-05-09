@@ -134,11 +134,8 @@ impl EventHandler for Handler {
                         })
                         .collect::<Vec<_>>();
                     if users_not_yet_completed.is_empty() {
-                        construct_leader_board(
-                            users,
-                            message.push(
-                                "Everyone has finished today's challenge, let's Grow Together!\n",
-                            ),
+                        message.push(
+                            "Everyone has finished today's challenge, let's Grow Together!\n",
                         );
                     } else {
                         message.push("Still waiting for ");
@@ -146,14 +143,14 @@ impl EventHandler for Handler {
                             message.mention(user);
                         }
                     }
-                    construct_leader_board(users, message.push("\n"));
-                } else if msg.content == "/scores" {
-                    construct_leader_board(users, &mut message);
-                } else {
+                } else if msg.content != "/scores" {
                     return;
                 }
                 if let Err(why) = ChannelId::new(LEETCODE_CHANNEL_ID)
-                    .say(ctx.clone().http, message.build())
+                    .say(
+                        ctx.clone().http,
+                        construct_leaderboard(users, &mut message).build(),
+                    )
                     .await
                 {
                     println!("Error sending reply message: {why:?}");
@@ -175,7 +172,7 @@ fn read_user_data() -> (File, UserData) {
     )
 }
 
-fn construct_leader_board<'a>(
+fn construct_leaderboard<'a>(
     users: &Users,
     message: &'a mut MessageBuilder,
 ) -> &'a mut MessageBuilder {
@@ -256,7 +253,7 @@ async fn schedule_daily_reset(ctx: Context) {
                         " everyone completed the challenge! Awesome job to start a new day!"
                     }))
                     .push("\n\n");
-                    construct_leader_board(users, message
+                    construct_leaderboard(users, message
                             .push("Share your code in the format below to confirm your completion of today's ")
                             .push_named_link("LeetCode", "https://leetcode.com/problemset")
                             .push(" Daily @everyone\n")
