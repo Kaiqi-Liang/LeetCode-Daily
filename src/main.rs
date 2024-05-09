@@ -6,8 +6,14 @@ use serenity::{
     utils::{EmbedMessageBuilding, MessageBuilder},
     Error,
 };
-use std::{collections::HashMap, env::var, sync::Arc, time::Duration as StdDuration};
+use std::{
+    collections::HashMap, env::var, fs::File, io::Read, sync::Arc, time::Duration as StdDuration,
+};
 use tokio::{main, spawn, time};
+
+type Users = HashMap<UserId, UserStatus>;
+type Guild = HashMap<GuildId, Users>;
+type SharedMemberMap = Arc<Mutex<Guild>>;
 
 struct UserStatus {
     user: User,
@@ -15,8 +21,6 @@ struct UserStatus {
     score: usize,
 }
 
-type Users = HashMap<UserId, UserStatus>;
-type SharedMemberMap = Arc<Mutex<HashMap<GuildId, Users>>>;
 struct MemberList;
 impl TypeMapKey for MemberList {
     type Value = SharedMemberMap;
@@ -30,8 +34,14 @@ struct Handler;
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
-        {
-            if let Some(member_map) = ctx.data.write().await.get::<MemberList>() {
+        if let Some(member_map) = ctx.data.write().await.get::<MemberList>() {
+            if let Ok(mut user_status) = File::open("user_data.json") {
+                let mut contents = String::new();
+                user_status
+                    .read_to_string(&mut contents)
+                    .expect("Data is not valid UTF-8");
+                let guild_local: HashMap<GuildId, HashMap<UserId, usize>> =
+                    serde_json::from_str(&contents).expect("Malform data");
                 for guild in ready.guilds {
                     if let Ok(members) = guild.id.members(&ctx.http, None, None).await {
                         member_map.lock().await.insert(
@@ -46,9 +56,16 @@ impl EventHandler for Handler {
                                         Some((
                                             user.id,
                                             UserStatus {
-                                                user,
+                                                user: user.clone(),
                                                 completed: false,
-                                                score: 0,
+                                                score: if let Some(&score) = guild_local
+                                                    .get(&guild.id)
+                                                    .and_then(|users| users.get(&user.id))
+                                                {
+                                                    score
+                                                } else {
+                                                    0
+                                                },
                                             },
                                         ))
                                     }
@@ -185,7 +202,8 @@ async fn schedule_daily_reset(ctx: Context) {
                         " did not complete the challenge :( each lost 1 point as a penalty"
                     } else {
                         " everyone completed the challenge! Awesome job to start a new day!"
-                    })).push("\n\n");
+                    }))
+                    .push("\n\n");
                     construct_leader_board(users, message
                             .push("Share your code in the format below to confirm your completion of today's ")
                             .push_named_link("LeetCode", "https://leetcode.com/problemset")
