@@ -107,6 +107,7 @@ impl EventHandler for Handler {
                             message.mention(user);
                         }
                     }
+                    construct_leader_board(users, message.push("\n"));
                 } else if msg.content == "/scores" {
                     construct_leader_board(users, &mut message);
                 } else {
@@ -134,7 +135,7 @@ fn construct_leader_board<'a>(
         .collect::<Vec<_>>();
     leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
     for (user, score) in leaderboard {
-        message.mention(user).push(format!(": {score}\n"));
+        message.push(format!("{user}: {score}\n"));
     }
     message
 }
@@ -173,16 +174,18 @@ async fn schedule_daily_reset(ctx: Context) {
                         if !user.completed {
                             penalties = true;
                             message.mention(&user.user);
-                            user.score -= 1;
+                            if user.score > 0 {
+                                user.score -= 1;
+                            }
                         } else {
                             user.completed = false;
                         }
                     }
-                    message.push(if penalties {
+                    (message.push(if penalties {
                         " did not complete the challenge :( each lost 1 point as a penalty"
                     } else {
                         " everyone completed the challenge! Awesome job to start a new day!"
-                    });
+                    })).push("\n\n");
                     construct_leader_board(users, message
                             .push("Share your code in the format below to confirm your completion of today's ")
                             .push_named_link("LeetCode", "https://leetcode.com/problemset")
