@@ -202,29 +202,30 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
     let mut message = MessageBuilder::new();
     if msg.content.contains("||") && msg.content.contains("```") {
         let user = users.get_mut(&msg.author.id).ok_or("No user in guild")?;
-        if !user.completed {
-            user.completed = true;
-            let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
-            user.score += score;
-            state
-                .user_data
-                .entry(*guild_id)
-                .and_modify(|guild| {
-                    guild.insert(
-                        msg.author.id,
-                        Data {
-                            completed: true,
-                            score: user.score,
-                        },
-                    );
-                })
-                .or_insert(HashMap::new());
-            message
-                .push("Congrats to ")
-                .mention(&user.user)
-                .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.score));
+        if user.completed {
+            return Ok(());
         }
+        user.completed = true;
+        let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
+        user.score += score;
+        state
+            .user_data
+            .entry(*guild_id)
+            .and_modify(|guild| {
+                guild.insert(
+                    msg.author.id,
+                    Data {
+                        completed: true,
+                        score: user.score,
+                    },
+                );
+            })
+            .or_insert(HashMap::new());
         write_to_database!(state);
+        message
+            .push("Congrats to ")
+            .mention(&user.user)
+            .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.score));
         let users_not_yet_completed = users
             .values()
             .filter_map(|user| {
@@ -244,6 +245,7 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
             }
         }
     } else if msg.content != "/scores" {
+        // TODO: Use command framework
         return Ok(());
     }
     send_message_with_leaderboard!(ctx, users, message);
