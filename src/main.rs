@@ -1,5 +1,5 @@
 use chrono::{TimeDelta, TimeZone, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serenity::{
     async_trait,
     model::prelude::*,
@@ -8,7 +8,12 @@ use serenity::{
     Error,
 };
 use std::{
-    collections::HashMap, env::var, fs::File, io::Read, sync::Arc, time::Duration as StdDuration,
+    collections::HashMap,
+    env::var,
+    fs::File,
+    io::{Read, Write},
+    sync::Arc,
+    time::Duration as StdDuration,
 };
 use tokio::{main, spawn, time};
 
@@ -17,7 +22,7 @@ type Guild = HashMap<GuildId, Users>;
 type SharedMemberMap = Arc<Mutex<Guild>>;
 type UserData = HashMap<GuildId, HashMap<UserId, Data>>;
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct Data {
     completed: bool,
     score: usize,
@@ -43,7 +48,7 @@ impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
         if let Some(member_map) = ctx.data.write().await.get::<MemberList>() {
-            let guild_local = read_user_data();
+            let (_, guild_local) = read_user_data();
             for guild in ready.guilds {
                 let guild_id = guild.id;
                 if let Ok(members) = guild.id.members(&ctx.http, None, None).await {
@@ -91,7 +96,7 @@ impl EventHandler for Handler {
                 let mut message = MessageBuilder::new();
                 if msg.content.contains("||") && msg.content.contains("```") {
                     if let Some(user) = users.get_mut(&msg.author.id) {
-                        let mut guild_local = read_user_data();
+                        let (mut user_data, mut guild_local) = read_user_data();
                         if !user.completed {
                             user.completed = true;
                             let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1)
@@ -114,6 +119,11 @@ impl EventHandler for Handler {
                                 .push("Congrats to ")
                                 .mention(&user.user)
                                 .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.score));
+                        }
+                        if let Err(why) = serde_json::to_string_pretty(&guild_local)
+                            .map(|data| user_data.write_all(data.as_bytes()))
+                        {
+                            println!("Error writing to file {why}");
                         }
                     }
                     let users_not_yet_completed = users
@@ -156,13 +166,16 @@ impl EventHandler for Handler {
     }
 }
 
-fn read_user_data() -> UserData {
-    let mut user_status = File::open("user_data.json").expect("Failed to read user data");
+fn read_user_data() -> (File, UserData) {
+    let mut user_data = File::open("user_data.json").expect("Failed to read user data");
     let mut contents = String::new();
-    user_status
+    user_data
         .read_to_string(&mut contents)
         .expect("Data is not valid UTF-8");
-    serde_json::from_str(&contents).expect("Malform data")
+    (
+        user_data,
+        serde_json::from_str(&contents).expect("Malform data"),
+    )
 }
 
 fn construct_leader_board<'a>(
@@ -207,7 +220,7 @@ async fn schedule_daily_reset(ctx: Context) {
 
             if let Some(member_map) = ctx.data.write().await.get_mut::<MemberList>() {
                 let mut member_map = member_map.lock().await;
-                let mut guild_local = read_user_data();
+                let (mut user_data, mut guild_local) = read_user_data();
                 for (guild_id, users) in member_map.iter_mut() {
                     let mut message = MessageBuilder::new();
                     message.push("Yesterday ");
@@ -234,6 +247,11 @@ async fn schedule_daily_reset(ctx: Context) {
                                 );
                             })
                             .or_insert(HashMap::new());
+                        if let Err(why) = serde_json::to_string_pretty(&guild_local)
+                            .map(|data| user_data.write_all(data.as_bytes()))
+                        {
+                            println!("Error writing to file {why}");
+                        }
                     }
                     (message.push(if penalties {
                         " did not complete the challenge :( each lost 1 point as a penalty"
