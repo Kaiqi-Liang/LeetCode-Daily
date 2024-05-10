@@ -163,7 +163,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                         guild.insert(
                             *user_id,
                             Status {
-                                completed: true,
+                                completed: false,
                                 score: user.status.score,
                             },
                         );
@@ -173,15 +173,14 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             }
             message
                 .push(if penalties {
-                    " did not complete the challenge :( each lost 1 point as a penalty"
+                    "did not complete the challenge :( each lost 1 point as a penalty"
                 } else {
-                    " everyone completed the challenge! Awesome job to start a new day!"
+                    "everyone completed the challenge! Awesome job to start a new day!"
                 })
-                .push("\n\n")
-                .push("Share your code in the format below to confirm your completion of today's ")
+                .push("\nShare your code in the format below to confirm your completion of today's ")
                 .push_named_link("LeetCode", "https://leetcode.com/problemset")
                 .push(" Daily @everyone\n")
-                .push_safe("||```code```||\n");
+                .push_safe("||```code```||\n\n");
             send_message_with_leaderboard!(ctx, users, message);
         }
     }
@@ -245,6 +244,7 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
                 message.mention(user);
             }
         }
+        message.push("\n\n");
     } else if msg.content != "/scores" {
         // TODO: Use command framework
         return Ok(());
