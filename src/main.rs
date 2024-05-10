@@ -1,4 +1,4 @@
-use leetcode_daily::{respond, schedule_daily_reset, setup, SharedState, State};
+use leetcode_daily::{respond, schedule_daily_reset, setup, vote, SharedState, State};
 use serenity::{async_trait, model::prelude::*, prelude::*};
 use std::{collections::HashMap, env::var, error::Error, fs::OpenOptions, io::Read, sync::Arc};
 use tokio::{main, spawn};
@@ -19,8 +19,16 @@ impl EventHandler for Handler {
     }
 
     async fn message(&self, ctx: Context, msg: Message) {
-        if let Err(why) = respond(ctx, msg).await {
-            println!("Error responding to messages {why:?}");
+        if !msg.author.bot {
+            if let Err(why) = respond(ctx, msg).await {
+                println!("Error responding to messages {why:?}");
+            }
+        }
+    }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        if let Err(why) = vote(ctx, interaction).await {
+            println!("Error responding to vote interaction {why:?}");
         }
     }
 }
@@ -49,6 +57,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         data.insert::<State>(SharedState {
             guild: Arc::new(Mutex::new(HashMap::new())),
             database,
+            poll_id: None,
             user_data: serde_json::from_str(&contents)?,
         });
     }
