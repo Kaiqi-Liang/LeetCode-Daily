@@ -27,8 +27,9 @@ impl EventHandler for Handler {
     }
 
     async fn message(&self, ctx: Context, msg: Message) {
-        if !msg.author.bot {
-            if let Err(why) = respond(ctx, msg).await {
+        let bot = ctx.cache.current_user().id;
+        if msg.author.id != bot {
+            if let Err(why) = respond(ctx, msg, bot).await {
                 println!("Error responding to messages {why:?}");
             }
         }
