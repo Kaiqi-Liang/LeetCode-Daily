@@ -10,18 +10,18 @@ struct Handler;
 impl EventHandler for Handler {
     async fn guild_create(&self, ctx: Context, guild: Guild, _is_new: Option<bool>) {
         if let Err(why) = initialise_guild(ctx, guild).await {
-            println!("Error initialising guild {why:?}");
+            println!("Error initialising guild {why}");
         }
     }
 
     async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
         if let Err(why) = setup(&ctx, ready).await {
-            println!("Error setting up {why:?}");
+            println!("Error setting up {why}");
         }
         spawn(async move {
             if let Err(why) = schedule_daily_reset(ctx).await {
-                println!("Error scheduling {why:?}");
+                println!("Error scheduling {why}");
             }
         });
     }
@@ -30,14 +30,14 @@ impl EventHandler for Handler {
         let bot = ctx.cache.current_user().id;
         if msg.author.id != bot {
             if let Err(why) = respond(ctx, msg, bot).await {
-                println!("Error responding to messages {why:?}");
+                println!("Error responding to messages {why}");
             }
         }
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if let Err(why) = vote(ctx, interaction).await {
-            println!("Error responding to vote interaction {why:?}");
+            println!("Error responding to vote interaction {why}");
         }
     }
 }
@@ -55,7 +55,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )
     .event_handler(Handler)
     .await?;
-
     {
         let mut file = OpenOptions::new()
             .read(true)
@@ -70,6 +69,5 @@ async fn main() -> Result<(), Box<dyn Error>> {
             database: serde_json::from_str(&contents)?,
         });
     }
-
-    Ok(client.start().await?)
+    client.start().await.map_err(|e| e.into())
 }

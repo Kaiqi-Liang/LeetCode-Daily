@@ -116,7 +116,7 @@ macro_rules! get_guild_from_id {
 
 macro_rules! acknowledge_interaction {
     ($ctx:ident, $component:ident, $content:expr) => {
-        Ok($component
+        $component
             .create_response(
                 &$ctx.http,
                 CreateInteractionResponse::Message(
@@ -125,7 +125,8 @@ macro_rules! acknowledge_interaction {
                         .ephemeral(true),
                 ),
             )
-            .await?)
+            .await
+            .map_err(|e| e.into())
     };
 }
 
@@ -378,7 +379,7 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
 
 fn build_submission_message(
     guild: &Data,
-    guilds: &MutexGuard<'_, Guilds>,
+    guilds: &MutexGuard<Guilds>,
     guild_id: &GuildId,
 ) -> String {
     let mut message = MessageBuilder::new();
