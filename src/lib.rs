@@ -1,4 +1,5 @@
 use chrono::{TimeDelta, TimeZone, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serenity::{
     all::{
@@ -270,6 +271,7 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let mut message = MessageBuilder::new();
+    let code_block = Regex::new(r"(?s)\|\|```.+```\|\|")?.captures(&msg.content);
     if msg.content.starts_with("/channel") {
         let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
         if let Ok(channel_id) = channel_id.parse::<u64>() {
@@ -298,12 +300,15 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
                 .await?;
         }
         return Ok(());
-    } else if msg.content.contains("||") && msg.content.contains("```") {
+    } else if let Some(code_block) = code_block {
+        println!("{code_block:?}");
         let user = get_user_from_id!(guild.users, user_id);
         if user.submitted.is_some() {
             return Ok(());
         }
-        user.submitted = Some(msg.content);
+        user.submitted = code_block
+            .get(0)
+            .map(|code_block| code_block.as_str().to_string());
         let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
         user.score += score;
         message
