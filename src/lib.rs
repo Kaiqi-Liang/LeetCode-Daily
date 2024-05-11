@@ -393,40 +393,36 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
                 .is_some_and(|poll_id| poll_id == component.message.id)
         {
             if let ComponentInteractionDataKind::UserSelect { values } = &component.data.kind {
-                if values.len() != 1 {
-                    return Err("Did not select a single value".into());
-                }
-                let voted_for = values[0];
-                if let Some(voted_for) = guild.users.get(&voted_for) {
-                    if voted_for.submitted.is_none() {
+                let voted_for = values.get(0).ok_or("Did not select a single value")?;
+                if let Some(voted_for_status) = guild.users.get(voted_for) {
+                    if voted_for_status.submitted.is_none() {
                         return acknowledge_interaction!(
                             ctx,
                             component,
-                            "You cannot vote for someone who hasn't completed the challenge"
+                            "Cannot vote for someone who hasn't completed the challenge"
                         );
                     }
                 } else {
                     return acknowledge_interaction!(
                         ctx,
                         component,
-                        "You cannot vote for someone who is not participating in the challenge"
+                        "Cannot vote for someone who is not participating in the challenge"
                     );
                 }
                 let user_id = component.user.id;
-                let user = get_user_from_id!(guild.users, user_id);
-                if voted_for == user_id {
-                    return acknowledge_interaction!(
-                        ctx,
-                        component,
-                        "You cannot vote for yourself"
-                    );
+                if *voted_for == user_id {
+                    return acknowledge_interaction!(ctx, component, "Cannot vote for yourself");
                 }
-                user.voted_for = Some(voted_for);
+                let user = get_user_from_id!(guild.users, user_id);
+                user.voted_for = Some(*voted_for);
                 write_to_database!(state);
                 return acknowledge_interaction!(
                     ctx,
                     component,
-                    "You have successfully submitted your vote"
+                    format!(
+                        "Successfully submitted your vote for {}",
+                        get_user_from_id!(state.guilds.lock().await, guild_id, voted_for)
+                    )
                 );
             }
         }
