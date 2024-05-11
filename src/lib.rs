@@ -38,7 +38,7 @@ pub struct Data {
 #[derive(Serialize, Deserialize)]
 struct Status {
     pub voted_for: Option<UserId>,
-    pub completed: bool,
+    pub submitted: Option<String>,
     pub score: usize,
 }
 
@@ -53,7 +53,7 @@ impl TypeMapKey for State {
     type Value = SharedState;
 }
 
-const CUSTOM_ID: &str = "favourite_solution";
+const CUSTOM_ID: &str = "favourite_submission";
 const NUM_SECS_IN_AN_HOUR: u64 = 3600;
 
 macro_rules! get_channel_from_guild {
@@ -190,9 +190,13 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             let mut data = ctx.data.write().await;
             let state = get_shared_state!(data);
 
-            for guild in state.database.values_mut() {
+            for (guild_id, guild) in state.database.iter_mut() {
                 if guild.poll_id.is_none() {
-                    guild.poll_id = Some(poll(&ctx, guild).await?.id);
+                    guild.poll_id = Some(
+                        poll(&ctx, guild, state.guilds.lock().await, guild_id)
+                            .await?
+                            .id,
+                    );
                 }
             }
         }
@@ -214,14 +218,14 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                         .and_modify(|votes| *votes += 1)
                         .or_insert(1);
                 }
-                if !user.completed {
+                if user.submitted.is_none() {
                     penalties = true;
                     message.mention(get_user_from_id!(guilds, guild_id, user_id));
                     if user.score > 0 {
                         user.score -= 1;
                     }
                 } else {
-                    user.completed = false;
+                    user.submitted = None;
                 }
                 user.voted_for = None;
             }
@@ -274,10 +278,10 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
         return Ok(());
     } else if msg.content.contains("||") && msg.content.contains("```") {
         let user = get_user_from_id!(guild.users, user_id);
-        if user.completed {
+        if user.submitted.is_some() {
             return Ok(());
         }
-        user.completed = true;
+        user.submitted = Some(msg.content);
         let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
         user.score += score;
         message
@@ -289,7 +293,7 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
             .users
             .iter()
             .filter_map(|(id, user)| {
-                if user.completed {
+                if user.submitted.is_some() {
                     None
                 } else {
                     Some(get_user_from_id!(guilds, guild_id, id))
@@ -297,7 +301,7 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
             })
             .collect::<Vec<_>>();
         if users_not_yet_completed.is_empty() {
-            message.push("Everyone has finished today's challenge, let's Grow Together!\n");
+            message.push("Everyone has finished today's challenge, let's Grow Together!");
             should_poll = true;
         } else {
             message.push("Still waiting for ");
@@ -308,39 +312,61 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
         message.push("\n\n");
     } else if msg.content != "/scores" {
         if msg.content == "/poll" {
-            guild.poll_id = Some(poll(&ctx, guild).await?.id);
+            guild.poll_id = Some(
+                poll(&ctx, guild, state.guilds.lock().await, guild_id)
+                    .await?
+                    .id,
+            );
         }
+        write_to_database!(state);
         return Ok(());
     }
     send_message_with_leaderboard!(ctx, state.guilds.lock().await, guild_id, &guild, message);
     if should_poll {
-        guild.poll_id = Some(poll(&ctx, guild).await?.id);
+        guild.poll_id = Some(
+            poll(&ctx, &guild, state.guilds.lock().await, guild_id)
+                .await?
+                .id,
+        );
     }
     write_to_database!(state);
     Ok(())
 }
 
-async fn poll(ctx: &Context, guild: &Data) -> Result<Message, Box<dyn Error>> {
+async fn poll(
+    ctx: &Context,
+    guild: &Data,
+    guilds: MutexGuard<'_, Guilds>,
+    guild_id: &GuildId,
+) -> Result<Message, Box<dyn Error>> {
     let channel = get_channel_from_guild!(guild);
     Ok(if let Some(poll_id) = guild.poll_id {
         let message = channel.message(&ctx.http, poll_id).await?;
         message.reply(ctx, "You can vote via this poll").await?;
         message
     } else {
+        let mut message = MessageBuilder::new();
+        message.push("Choose your favourite submission\n");
+        for (id, status) in guild.users.iter() {
+            if let Some(submitted) = &status.submitted {
+                message
+                    .mention(get_user_from_id!(guilds, guild_id, id))
+                    .push(submitted)
+                    .push("\n");
+            }
+        }
         channel
             .send_message(
                 ctx,
-                CreateMessage::new()
-                    .content("Choose your favourite solution")
-                    .select_menu(
-                        CreateSelectMenu::new(
-                            CUSTOM_ID,
-                            CreateSelectMenuKind::User {
-                                default_users: None,
-                            },
-                        )
-                        .placeholder("No solution selected"),
-                    ),
+                CreateMessage::new().content(message.build()).select_menu(
+                    CreateSelectMenu::new(
+                        CUSTOM_ID,
+                        CreateSelectMenuKind::User {
+                            default_users: None,
+                        },
+                    )
+                    .placeholder("No submission selected"),
+                ),
             )
             .await?
     })
@@ -365,7 +391,7 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
                 }
                 let voted_for = values[0];
                 if let Some(voted_for) = guild.users.get(&voted_for) {
-                    if !voted_for.completed {
+                    if voted_for.submitted.is_none() {
                         return acknowledge_interaction!(
                             ctx,
                             component,
@@ -420,7 +446,7 @@ pub async fn initialise_guild(ctx: Context, guild: Guild) -> Result<(), Box<dyn 
                             user.id,
                             Status {
                                 voted_for: None,
-                                completed: false,
+                                submitted: None,
                                 score: 0,
                             },
                         ))
