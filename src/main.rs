@@ -9,7 +9,8 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn guild_create(&self, ctx: Context, guild: Guild, _is_new: Option<bool>) {
-        if let Err(why) = initialise_guild(ctx, guild).await {
+        let bot = ctx.cache.current_user().id;
+        if let Err(why) = initialise_guild(ctx, guild, _is_new, bot).await {
             println!("Error initialising guild {why}");
         }
     }

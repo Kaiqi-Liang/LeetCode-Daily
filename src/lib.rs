@@ -487,7 +487,12 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
     Ok(())
 }
 
-pub async fn initialise_guild(ctx: Context, guild: Guild) -> Result<(), Box<dyn Error>> {
+pub async fn initialise_guild(
+    ctx: Context,
+    guild: Guild,
+    is_new: Option<bool>,
+    bot: UserId,
+) -> Result<(), Box<dyn Error>> {
     let mut data = ctx.data.write().await;
     let state = get_shared_state!(data);
     if !state.database.contains_key(&guild.id) {
@@ -516,11 +521,27 @@ pub async fn initialise_guild(ctx: Context, guild: Guild) -> Result<(), Box<dyn 
             channel_id: None,
             poll_id: None,
         };
-        for (id, guild_channel) in guild.channels {
-            if guild_channel.kind == ChannelType::Text {
-                data.channel_id = Some(id);
+        for channel in guild.channels.values() {
+            if channel.kind == ChannelType::Text {
+                data.channel_id = Some(channel.id);
                 state.database.insert(guild.id, data);
                 write_to_database!(state);
+                if is_new.ok_or("_is_new == None")? {
+                    channel
+                        .id
+                        .say(
+                            &ctx.http,
+                            MessageBuilder::new()
+                                .push("Welcome! The default channel for ")
+                                .mention(&bot)
+                                .push(" is ")
+                                .channel(channel.id)
+                                .push("\nYou can change it by using the following command")
+                                .push_codeblock("/channel channel_id", None)
+                                .build(),
+                        )
+                        .await?;
+                }
                 return Ok(());
             }
         }
