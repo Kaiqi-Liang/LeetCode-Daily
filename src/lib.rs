@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serenity::{
     all::{
         CreateInteractionResponse, CreateInteractionResponseMessage, CreateMessage,
-        CreateSelectMenuKind,
+        CreateSelectMenuKind, EditMessage,
     },
     builder::CreateSelectMenu,
     model::prelude::*,
@@ -66,7 +66,7 @@ macro_rules! send_message_with_leaderboard {
     ($ctx:ident, $guilds:expr, $guild_id:ident, $guild:expr, $message:expr) => {
         get_channel_from_guild!($guild)
             .say(
-                $ctx.clone().http,
+                &$ctx.http,
                 construct_leaderboard(&$guild.users, $guilds, $guild_id, &mut $message).build(),
             )
             .await?;
@@ -125,6 +125,14 @@ macro_rules! acknowledge_interaction {
                 ),
             )
             .await?)
+    };
+}
+
+macro_rules! send_invalid_channel_id_message {
+    ($ctx:ident, $msg:ident) => {
+        $msg.channel_id
+            .say(&$ctx.http, "Invalid channel ID")
+            .await?;
     };
 }
 
@@ -193,7 +201,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             for (guild_id, guild) in state.database.iter_mut() {
                 if guild.poll_id.is_none() {
                     guild.poll_id = Some(
-                        poll(&ctx, guild, state.guilds.lock().await, guild_id)
+                        poll(&ctx, guild, state.guilds.lock().await, guild_id, None)
                             .await?
                             .id,
                     );
@@ -251,7 +259,6 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
 }
 
 pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
-    let mut should_poll = false;
     let mut data = ctx.data.write().await;
     let state = get_shared_state!(data);
     let user_id = &msg.author.id;
@@ -259,20 +266,35 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
         .guild_id
         .ok_or("This message was not received over the gateway")?;
     let guild = get_guild_from_id!(state, guild_id);
+    if get_channel_from_guild!(guild) != msg.channel_id {
+        return Ok(());
+    }
     let mut message = MessageBuilder::new();
     if msg.content.starts_with("/channel") {
         let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
         if let Ok(channel_id) = channel_id.parse::<u64>() {
             let channel_id = ChannelId::new(channel_id);
-            guild.channel_id = Some(channel_id);
-            write_to_database!(state);
-            message
-                .push("Successfully set channel to be ")
-                .channel(channel_id);
-            msg.channel_id.say(&ctx.http, message.build()).await?;
+            if let Ok(channel) = channel_id.to_channel(&ctx.http).await {
+                if let Channel::Guild(channel) = channel {
+                    if channel.kind != ChannelType::Text {
+                        send_invalid_channel_id_message!(ctx, msg);
+                    } else {
+                        message
+                            .push("Successfully set channel to be ")
+                            .channel(channel_id);
+                        msg.channel_id.say(&ctx.http, message.build()).await?;
+                        guild.channel_id = Some(channel_id);
+                        write_to_database!(state);
+                    }
+                } else {
+                    send_invalid_channel_id_message!(ctx, msg);
+                }
+            } else {
+                send_invalid_channel_id_message!(ctx, msg);
+            }
         } else {
             msg.channel_id
-                .say(ctx.http, "Usage: /channel channel_id")
+                .say(&ctx.http, "Usage: /channel channel_id")
                 .await?;
         }
         return Ok(());
@@ -288,7 +310,7 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
             .push("Congrats to ")
             .mention(get_user_from_id!(state.guilds.lock().await, guild_id, user_id))
             .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.score));
-        let guilds = state.guilds.lock().await.clone();
+        let guilds = state.guilds.lock().await;
         let users_not_yet_completed = guild
             .users
             .iter()
@@ -301,43 +323,62 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
             })
             .collect::<Vec<_>>();
         if users_not_yet_completed.is_empty() {
-            message.push("Everyone has finished today's challenge, let's Grow Together!");
-            should_poll = true;
+            guild.poll_id = Some(poll(&ctx, &guild, guilds, guild_id, None).await?.id);
         } else {
             message.push("Still waiting for ");
             for user in users_not_yet_completed {
                 message.mention(user);
             }
+            if let Some(poll_id) = guild.poll_id {
+                msg.channel_id
+                    .edit_message(
+                        &ctx.http,
+                        poll_id,
+                        EditMessage::new()
+                            .content(build_submission_message(guild, guilds, guild_id)),
+                    )
+                    .await?;
+            }
         }
         message.push("\n\n");
     } else if msg.content != "/scores" {
         if msg.content == "/poll" {
-            if guild.poll_id.is_none() {
-                msg.channel_id
-                    .say(&ctx.http, "There is no poll yet")
-                    .await?;
-                return Ok(());
-            } else {
-                guild.poll_id = Some(
-                    poll(&ctx, guild, state.guilds.lock().await, guild_id)
-                        .await?
-                        .id,
-                );
-                write_to_database!(state);
-            }
+            guild.poll_id = Some(
+                poll(
+                    &ctx,
+                    guild,
+                    state.guilds.lock().await,
+                    guild_id,
+                    Some(msg.channel_id),
+                )
+                .await?
+                .id,
+            );
+            write_to_database!(state);
         }
         return Ok(());
     }
     send_message_with_leaderboard!(ctx, state.guilds.lock().await, guild_id, &guild, message);
-    if should_poll {
-        guild.poll_id = Some(
-            poll(&ctx, &guild, state.guilds.lock().await, guild_id)
-                .await?
-                .id,
-        );
-    }
     write_to_database!(state);
     Ok(())
+}
+
+fn build_submission_message(
+    guild: &Data,
+    guilds: MutexGuard<'_, Guilds>,
+    guild_id: &GuildId,
+) -> String {
+    let mut message = MessageBuilder::new();
+    message.push("Choose your favourite submission\n");
+    for (id, status) in guild.users.iter() {
+        if let Some(submitted) = &status.submitted {
+            message
+                .mention(get_user_from_id!(guilds, guild_id, id))
+                .push(submitted)
+                .push("\n");
+        }
+    }
+    message.build()
 }
 
 async fn poll(
@@ -345,38 +386,40 @@ async fn poll(
     guild: &Data,
     guilds: MutexGuard<'_, Guilds>,
     guild_id: &GuildId,
+    channel: Option<ChannelId>,
 ) -> Result<Message, Box<dyn Error>> {
-    let channel = get_channel_from_guild!(guild);
-    Ok(if let Some(poll_id) = guild.poll_id {
-        let message = channel.message(&ctx.http, poll_id).await?;
-        message.reply(ctx, "You can vote via this poll").await?;
-        message
-    } else {
-        let mut message = MessageBuilder::new();
-        message.push("Choose your favourite submission\n");
-        for (id, status) in guild.users.iter() {
-            if let Some(submitted) = &status.submitted {
-                message
-                    .mention(get_user_from_id!(guilds, guild_id, id))
-                    .push(submitted)
-                    .push("\n");
-            }
+    let channel = channel.unwrap_or(get_channel_from_guild!(guild));
+    if let Some(poll_id) = guild.poll_id {
+        if let Ok(message) = channel.message(&ctx.http, poll_id).await {
+            message
+                .reply(&ctx.http, "You can vote via this poll")
+                .await?;
+            Ok(message)
+        } else {
+            channel
+                .say(&ctx.http, "Poll message is not in this channel")
+                .await?;
+            Err("Poll message is not in this channel".into())
         }
+    } else {
         channel
             .send_message(
-                ctx,
-                CreateMessage::new().content(message.build()).select_menu(
-                    CreateSelectMenu::new(
-                        CUSTOM_ID,
-                        CreateSelectMenuKind::User {
-                            default_users: None,
-                        },
-                    )
-                    .placeholder("No submission selected"),
-                ),
+                &ctx.http,
+                CreateMessage::new()
+                    .content(build_submission_message(guild, guilds, guild_id))
+                    .select_menu(
+                        CreateSelectMenu::new(
+                            CUSTOM_ID,
+                            CreateSelectMenuKind::User {
+                                default_users: None,
+                            },
+                        )
+                        .placeholder("No submission selected"),
+                    ),
             )
-            .await?
-    })
+            .await
+            .map_err(|e| e.into())
+    }
 }
 
 pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn Error>> {
