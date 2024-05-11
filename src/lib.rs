@@ -312,13 +312,20 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
         message.push("\n\n");
     } else if msg.content != "/scores" {
         if msg.content == "/poll" {
-            guild.poll_id = Some(
-                poll(&ctx, guild, state.guilds.lock().await, guild_id)
-                    .await?
-                    .id,
-            );
+            if guild.poll_id.is_none() {
+                msg.channel_id
+                    .say(&ctx.http, "There is no poll yet")
+                    .await?;
+                return Ok(());
+            } else {
+                guild.poll_id = Some(
+                    poll(&ctx, guild, state.guilds.lock().await, guild_id)
+                        .await?
+                        .id,
+                );
+                write_to_database!(state);
+            }
         }
-        write_to_database!(state);
         return Ok(());
     }
     send_message_with_leaderboard!(ctx, state.guilds.lock().await, guild_id, &guild, message);
