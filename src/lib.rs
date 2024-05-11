@@ -38,9 +38,9 @@ pub struct Data {
 
 #[derive(Serialize, Deserialize)]
 struct Status {
-    pub voted_for: Option<UserId>,
-    pub submitted: Option<String>,
-    pub score: usize,
+    voted_for: Option<UserId>,
+    submitted: Option<String>,
+    score: usize,
 }
 
 pub struct SharedState {
@@ -155,7 +155,7 @@ fn construct_leaderboard<'a>(
     message
 }
 
-pub fn time_till_utc_midnight() -> TimeDelta {
+fn time_till_utc_midnight() -> TimeDelta {
     Utc.from_utc_datetime(
         &Utc::now()
             .naive_utc()
@@ -515,8 +515,7 @@ pub async fn initialise_guild(ctx: Context, guild: Guild) -> Result<(), Box<dyn 
             channel_id: None,
             poll_id: None,
         };
-        let mut channel = guild.channels.iter();
-        while let Some((&id, guild_channel)) = channel.next() {
+        for (id, guild_channel) in guild.channels {
             if guild_channel.kind == ChannelType::Text {
                 data.channel_id = Some(id);
                 state.database.insert(guild.id, data);

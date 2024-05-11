@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
-            .open("user_data.json")?;
+            .open("database.json")?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
         let mut data = client.data.write().await;
