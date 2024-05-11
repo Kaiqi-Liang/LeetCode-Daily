@@ -23,28 +23,29 @@ use tokio::{
     time,
 };
 
-type Guild = HashMap<GuildId, Users>;
+type Guilds = HashMap<GuildId, Users>;
 type Users = HashMap<UserId, User>;
-type UserData = HashMap<GuildId, Data>;
-type Data = HashMap<UserId, Status>;
+type Database = HashMap<GuildId, Data>;
+type UserInfo = HashMap<UserId, Status>;
 
 #[derive(Serialize, Deserialize)]
-pub struct Status {
+pub struct Data {
+    users: UserInfo,
+    channel_id: Option<ChannelId>,
+    poll_id: Option<MessageId>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Status {
     pub voted_for: Option<UserId>,
     pub completed: bool,
     pub score: usize,
 }
 
-pub struct UserStatus {
-    pub user: User,
-    pub status: Status,
-}
-
 pub struct SharedState {
-    pub guild: Arc<Mutex<Guild>>,
-    pub database: File,
-    pub poll_id: Option<MessageId>,
-    pub user_data: UserData,
+    pub guilds: Arc<Mutex<Guilds>>,
+    pub file: File,
+    pub database: Database,
 }
 
 pub struct State;
@@ -53,15 +54,20 @@ impl TypeMapKey for State {
 }
 
 const CUSTOM_ID: &str = "favourite_solution";
-const LEETCODE_CHANNEL_ID: u64 = 1235529498770935840; // TODO: Make this configurable
 const NUM_SECS_IN_AN_HOUR: u64 = 3600;
 
+macro_rules! get_channel_from_guild {
+    ($guild:expr) => {
+        $guild.channel_id.ok_or("No default channel")?
+    };
+}
+
 macro_rules! send_message_with_leaderboard {
-    ($ctx:ident, $guild:expr, $guild_id:ident, $users:ident, $message:expr) => {
-        ChannelId::new(LEETCODE_CHANNEL_ID)
+    ($ctx:ident, $guilds:expr, $guild_id:ident, $guild:expr, $message:expr) => {
+        get_channel_from_guild!($guild)
             .say(
                 $ctx.clone().http,
-                construct_leaderboard($users, $guild, $guild_id, &mut $message).build(),
+                construct_leaderboard(&$guild.users, $guilds, $guild_id, &mut $message).build(),
             )
             .await?;
     };
@@ -69,10 +75,11 @@ macro_rules! send_message_with_leaderboard {
 
 macro_rules! write_to_database {
     ($state:ident) => {
-        let data = serde_json::to_string_pretty(&$state.user_data)?;
-        $state.database.seek(SeekFrom::Start(0))?;
-        $state.database.set_len(0)?;
-        $state.database.write_all(data.as_bytes())?;
+        $state.file.seek(SeekFrom::Start(0))?;
+        $state.file.set_len(0)?;
+        $state
+            .file
+            .write_all(serde_json::to_string_pretty(&$state.database)?.as_bytes())?;
     };
 }
 
@@ -85,24 +92,24 @@ macro_rules! get_shared_state {
 }
 
 macro_rules! get_user_from_id {
-    ($guild:expr, $guild_id:ident, $user_id:ident) => {
-        $guild
+    ($guilds:expr, $guild_id:ident, $user_id:ident) => {
+        $guilds
             .get($guild_id)
-            .expect("Guild does not exist in database")
+            .expect("Guild does not exist")
             .get($user_id)
-            .expect("User does not exist in database")
+            .expect("User does not exist")
     };
-    ($users:ident, $user_id:ident) => {
+    ($users:expr, $user_id:ident) => {
         $users.get_mut(&$user_id).ok_or("No user in guild")?
     };
 }
 
-macro_rules! get_users_from_guild_id {
+macro_rules! get_guild_from_id {
     ($state:ident, $guild_id:ident) => {
-        $state
-            .user_data
+        &mut $state
+            .database
             .get_mut(&$guild_id)
-            .ok_or("No guild in member map")?
+            .ok_or("Guild does not exist in database")?
     };
 }
 
@@ -121,16 +128,16 @@ macro_rules! acknowledge_interaction {
     };
 }
 
-pub fn construct_leaderboard<'a>(
-    users: &Data,
-    guild: MutexGuard<Guild>,
+fn construct_leaderboard<'a>(
+    users: &UserInfo,
+    guilds: MutexGuard<Guilds>,
     guild_id: &GuildId,
     message: &'a mut MessageBuilder,
 ) -> &'a mut MessageBuilder {
     message.push("The current leaderboard:\n");
     let mut leaderboard = users
         .iter()
-        .map(|(id, user)| (get_user_from_id!(guild, guild_id, id), user.score))
+        .map(|(id, user)| (get_user_from_id!(guilds, guild_id, id), user.score))
         .collect::<Vec<_>>();
     leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
     for (user, score) in leaderboard {
@@ -157,7 +164,7 @@ pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
     let state = get_shared_state!(data);
     for guild in ready.guilds {
         let members = guild.id.members(&ctx.http, None, None).await?;
-        state.guild.lock().await.insert(
+        state.guilds.lock().await.insert(
             guild.id,
             members
                 .into_iter()
@@ -178,22 +185,29 @@ pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
 pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
     loop {
         let duration: u64 = time_till_utc_midnight().num_seconds().try_into()?;
-        time::sleep(Duration::from_secs(duration - NUM_SECS_IN_AN_HOUR)).await;
+        if duration > NUM_SECS_IN_AN_HOUR {
+            time::sleep(Duration::from_secs(duration - NUM_SECS_IN_AN_HOUR)).await;
+            let mut data = ctx.data.write().await;
+            let state = get_shared_state!(data);
 
+            for guild in state.database.values_mut() {
+                if guild.poll_id.is_none() {
+                    guild.poll_id = Some(poll(&ctx, guild).await?.id);
+                }
+            }
+        }
+
+        time::sleep(Duration::from_secs(NUM_SECS_IN_AN_HOUR)).await;
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
-        if state.poll_id.is_none() {
-            state.poll_id = Some(poll(&ctx, state).await?.id);
-        }
-        time::sleep(Duration::from_secs(NUM_SECS_IN_AN_HOUR)).await;
-
-        for (guild_id, users) in state.user_data.iter_mut() {
-            let guild = state.guild.lock().await;
+        for (guild_id, guild) in state.database.iter_mut() {
+            guild.channel_id = None;
+            let guilds = state.guilds.lock().await;
             let mut message = MessageBuilder::new();
             message.push("Yesterday ");
             let mut penalties = false;
             let mut votes = HashMap::new();
-            for (user_id, user) in users.iter_mut() {
+            for (user_id, user) in guild.users.iter_mut() {
                 if let Some(voted_for) = user.voted_for {
                     votes
                         .entry(voted_for)
@@ -202,7 +216,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                 }
                 if !user.completed {
                     penalties = true;
-                    message.mention(get_user_from_id!(guild, guild_id, user_id));
+                    message.mention(get_user_from_id!(guilds, guild_id, user_id));
                     if user.score > 0 {
                         user.score -= 1;
                     }
@@ -224,9 +238,9 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                 .push(" Daily @everyone\n")
                 .push_safe("||```code```||\n\n");
             for (user_id, votes) in votes {
-                get_user_from_id!(users, user_id).score += votes;
+                get_user_from_id!(guild.users, user_id).score += votes;
             }
-            send_message_with_leaderboard!(ctx, guild, guild_id, users, message);
+            send_message_with_leaderboard!(ctx, guilds, guild_id, &guild, message);
         }
         write_to_database!(state);
     }
@@ -240,10 +254,26 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
     let guild_id = &msg
         .guild_id
         .ok_or("This message was not received over the gateway")?;
-    let users = get_users_from_guild_id!(state, guild_id);
+    let guild = get_guild_from_id!(state, guild_id);
     let mut message = MessageBuilder::new();
-    if msg.content.contains("||") && msg.content.contains("```") {
-        let user = get_user_from_id!(users, user_id);
+    if msg.content.starts_with("/channel") {
+        let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
+        if let Ok(channel_id) = channel_id.parse::<u64>() {
+            let channel_id = ChannelId::new(channel_id);
+            guild.channel_id = Some(channel_id);
+            write_to_database!(state);
+            message
+                .push("Successfully set channel to be ")
+                .channel(channel_id);
+            msg.channel_id.say(&ctx.http, message.build()).await?;
+        } else {
+            msg.channel_id
+                .say(ctx.http, "Usage: /channel channel_id")
+                .await?;
+        }
+        return Ok(());
+    } else if msg.content.contains("||") && msg.content.contains("```") {
+        let user = get_user_from_id!(guild.users, user_id);
         if user.completed {
             return Ok(());
         }
@@ -252,16 +282,17 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
         user.score += score;
         message
             .push("Congrats to ")
-            .mention(get_user_from_id!(state.guild.lock().await, guild_id, user_id))
+            .mention(get_user_from_id!(state.guilds.lock().await, guild_id, user_id))
             .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.score));
-        let guild = state.guild.lock().await.clone();
-        let users_not_yet_completed = users
+        let guilds = state.guilds.lock().await.clone();
+        let users_not_yet_completed = guild
+            .users
             .iter()
             .filter_map(|(id, user)| {
                 if user.completed {
                     None
                 } else {
-                    Some(get_user_from_id!(guild, guild_id, id))
+                    Some(get_user_from_id!(guilds, guild_id, id))
                 }
             })
             .collect::<Vec<_>>();
@@ -277,28 +308,26 @@ pub async fn respond(ctx: Context, msg: Message) -> Result<(), Box<dyn Error>> {
         message.push("\n\n");
     } else if msg.content != "/scores" {
         if msg.content == "/poll" {
-            state.poll_id = Some(poll(&ctx, state).await?.id);
+            guild.poll_id = Some(poll(&ctx, guild).await?.id);
         }
         return Ok(());
     }
-    send_message_with_leaderboard!(ctx, state.guild.lock().await, guild_id, users, message);
+    send_message_with_leaderboard!(ctx, state.guilds.lock().await, guild_id, &guild, message);
     if should_poll {
-        state.poll_id = Some(poll(&ctx, state).await?.id);
+        guild.poll_id = Some(poll(&ctx, guild).await?.id);
     }
     write_to_database!(state);
     Ok(())
 }
 
-async fn poll(ctx: &Context, state: &mut SharedState) -> Result<Message, Box<dyn Error>> {
-    Ok(if let Some(poll_id) = state.poll_id {
-        let message = ChannelId::new(LEETCODE_CHANNEL_ID)
-            .message(&ctx.http, poll_id)
-            .await?;
-        message.reply(ctx, "You can vote via this poll")
-            .await?;
-		message
+async fn poll(ctx: &Context, guild: &Data) -> Result<Message, Box<dyn Error>> {
+    let channel = get_channel_from_guild!(guild);
+    Ok(if let Some(poll_id) = guild.poll_id {
+        let message = channel.message(&ctx.http, poll_id).await?;
+        message.reply(ctx, "You can vote via this poll").await?;
+        message
     } else {
-        ChannelId::new(LEETCODE_CHANNEL_ID)
+        channel
             .send_message(
                 ctx,
                 CreateMessage::new()
@@ -324,8 +353,9 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
         let guild_id = &component
             .guild_id
             .ok_or("This interaction was not received over the gateway")?;
+        let guild = get_guild_from_id!(state, guild_id);
         if component.data.custom_id == CUSTOM_ID
-            && state
+            && guild
                 .poll_id
                 .is_some_and(|poll_id| poll_id == component.message.id)
         {
@@ -334,8 +364,7 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
                     return Err("Did not select a single value".into());
                 }
                 let voted_for = values[0];
-                let users = get_users_from_guild_id!(state, guild_id);
-                if let Some(voted_for) = users.get(&voted_for) {
+                if let Some(voted_for) = guild.users.get(&voted_for) {
                     if !voted_for.completed {
                         return acknowledge_interaction!(
                             ctx,
@@ -351,7 +380,7 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
                     );
                 }
                 let user_id = component.user.id;
-                let user = get_user_from_id!(users, user_id);
+                let user = get_user_from_id!(guild.users, user_id);
                 if voted_for == user_id {
                     return acknowledge_interaction!(
                         ctx,
@@ -370,4 +399,48 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
         }
     }
     Ok(())
+}
+
+pub async fn initialise_guild(ctx: Context, guild: Guild) -> Result<(), Box<dyn Error>> {
+    let mut data = ctx.data.write().await;
+    let state = get_shared_state!(data);
+    if !state.database.contains_key(&guild.id) {
+        let mut data = Data {
+            users: guild
+                .id
+                .members(&ctx.http, None, None)
+                .await?
+                .into_iter()
+                .filter_map(|member| {
+                    let user = member.user;
+                    if user.bot {
+                        None
+                    } else {
+                        Some((
+                            user.id,
+                            Status {
+                                voted_for: None,
+                                completed: false,
+                                score: 0,
+                            },
+                        ))
+                    }
+                })
+                .collect(),
+            channel_id: None,
+            poll_id: None,
+        };
+        let mut channel = guild.channels.iter();
+        while let Some((&id, guild_channel)) = channel.next() {
+            if guild_channel.kind == ChannelType::Text {
+                data.channel_id = Some(id);
+                state.database.insert(guild.id, data);
+                write_to_database!(state);
+                return Ok(());
+            }
+        }
+        Err("No available channel".into())
+    } else {
+        Ok(())
+    }
 }

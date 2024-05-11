@@ -1,4 +1,6 @@
-use leetcode_daily::{respond, schedule_daily_reset, setup, vote, SharedState, State};
+use leetcode_daily::{
+    initialise_guild, respond, schedule_daily_reset, setup, vote, SharedState, State,
+};
 use serenity::{async_trait, model::prelude::*, prelude::*};
 use std::{collections::HashMap, env::var, error::Error, fs::OpenOptions, io::Read, sync::Arc};
 use tokio::{main, spawn};
@@ -6,6 +8,12 @@ use tokio::{main, spawn};
 struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
+    async fn guild_create(&self, ctx: Context, guild: Guild, _is_new: Option<bool>) {
+        if let Err(why) = initialise_guild(ctx, guild).await {
+            println!("Error initialising guild {why:?}");
+        }
+    }
+
     async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
         if let Err(why) = setup(&ctx, ready).await {
@@ -39,6 +47,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut client = Client::builder(
         token,
         GatewayIntents::DIRECT_MESSAGES
+            | GatewayIntents::GUILDS
             | GatewayIntents::GUILD_MESSAGES
             | GatewayIntents::MESSAGE_CONTENT
             | GatewayIntents::GUILD_MEMBERS,
@@ -47,21 +56,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     .await?;
 
     {
-        let mut database = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .open("user_data.json")?;
         let mut contents = String::new();
-        database.read_to_string(&mut contents)?;
+        file.read_to_string(&mut contents)?;
         let mut data = client.data.write().await;
         data.insert::<State>(SharedState {
-            guild: Arc::new(Mutex::new(HashMap::new())),
-            database,
-            poll_id: None,
-            user_data: serde_json::from_str(&contents)?,
+            guilds: Arc::new(Mutex::new(HashMap::new())),
+            file,
+            database: serde_json::from_str(&contents)?,
         });
     }
 
-    client.start().await?;
-    Ok(())
+    Ok(client.start().await?)
 }
