@@ -167,6 +167,20 @@ macro_rules! send_invalid_channel_id_message {
     };
 }
 
+macro_rules! send_channel_usage_message {
+    ($ctx:ident, $channel:expr) => {
+        $channel
+            .say(
+                &$ctx.http,
+                MessageBuilder::new()
+                    .push("Usage:")
+                    .push_codeblock("/channel channel_id", None)
+                    .build(),
+            )
+            .await?;
+    };
+}
+
 macro_rules! create_thread {
     ($ctx:ident, $guild:ident) => {
         $guild.thread_id = get_channel_from_guild!($guild)
@@ -340,16 +354,31 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
         let channel = get_channel_from_guild!(guild);
         let mut message = MessageBuilder::new();
         if channel == msg.channel_id {
-            if Regex::new(r"/(scores|poll)")?.is_match(&msg.content) || code_block.is_some() {
+            if msg.content == "/poll" || code_block.is_some() {
                 channel
                     .say(
                         &ctx.http,
                         message
-                            .push("Please send your commands in today's ")
+                            .push("Please send your command and code in today's ")
                             .channel(thread)
                             .build(),
                     )
                     .await?;
+            } else if msg.content == "/scores" {
+                msg.channel_id
+                    .say(
+                        &ctx.http,
+                        construct_leaderboard(
+                            &guild.users,
+                            state.guilds.lock().await,
+                            guild_id,
+                            &mut message,
+                        )
+                        .build(),
+                    )
+                    .await?;
+            } else if msg.content == "/channel" {
+                send_channel_usage_message!(ctx, msg.channel_id);
             }
         } else if msg.content == "/channel" {
             msg.channel_id
@@ -381,9 +410,7 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                 send_invalid_channel_id_message!(ctx, msg);
             }
         } else {
-            msg.channel_id
-                .say(&ctx.http, "Usage: /channel channel_id")
-                .await?;
+            send_channel_usage_message!(ctx, msg.channel_id);
         }
         return Ok(());
     } else if let Some(code_block) = code_block {
