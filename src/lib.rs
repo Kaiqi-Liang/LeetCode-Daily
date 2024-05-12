@@ -248,15 +248,21 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                 } else {
                     "everyone completed the challenge! Awesome job to start a new day!"
                 })
-                .push(
+                .push("\nThe number of votes received:");
+            let mut votes = votes.iter().collect::<Vec<_>>();
+            votes.sort_by(|a, b| a.1.cmp(b.1));
+            for (user_id, votes) in votes {
+                get_user_from_id!(guild.users, user_id).score += votes;
+                message
+                    .mention(get_user_from_id!(guilds, guild_id, user_id))
+                    .push(format!(": {votes}"));
+            }
+            message.push(
                     "\n\nShare your code in the format below to confirm your completion of today's ",
                 )
                 .push_named_link("LeetCode", "https://leetcode.com/problemset")
                 .push(" Daily @everyone\n")
                 .push_safe("||```code```||\n\n");
-            for (user_id, votes) in votes {
-                get_user_from_id!(guild.users, user_id).score += votes;
-            }
             send_message_with_leaderboard!(ctx, guilds, guild_id, &guild, message);
         }
         write_to_database!(state);
@@ -349,9 +355,8 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                 )
                 .await?;
         }
-        if users_not_yet_completed.is_empty() {
-            guild.poll_id = Some(poll(&ctx, guild, &guilds, guild_id, None).await?.id);
-        } else {
+        guild.poll_id = Some(poll(&ctx, guild, &guilds, guild_id, None).await?.id);
+        if !users_not_yet_completed.is_empty() {
             message.push("Still waiting for ");
             for user in users_not_yet_completed {
                 message.mention(user);
