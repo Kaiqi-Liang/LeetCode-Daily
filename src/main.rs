@@ -18,7 +18,6 @@ impl EventHandler for Handler {
     }
 
     async fn ready(&self, ctx: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
         if let Err(why) = setup(&ctx, ready).await {
             println!("Error setting up {why}");
         }

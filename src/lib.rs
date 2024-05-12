@@ -234,13 +234,15 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             let state = get_shared_state!(data);
 
             for (guild_id, guild) in state.database.iter_mut() {
-                if guild.poll_id.is_none() {
-                    guild.poll_id = Some(
-                        poll(&ctx, guild, &state.guilds.lock().await, guild_id, None)
-                            .await?
-                            .id,
-                    );
+                if guild.poll_id.is_some() {
+                    get_channel_from_guild!(guild)
+                        .say(&ctx.http, "An hour remaining before voting ends").await?;
                 }
+                guild.poll_id = Some(
+                    poll(&ctx, guild, &state.guilds.lock().await, guild_id, None)
+                        .await?
+                        .id,
+                );
             }
         }
 
