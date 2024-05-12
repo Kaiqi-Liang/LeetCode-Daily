@@ -10,8 +10,10 @@ struct Handler;
 impl EventHandler for Handler {
     async fn guild_create(&self, ctx: Context, guild: Guild, _is_new: Option<bool>) {
         let bot = ctx.cache.current_user().id;
-        if let Err(why) = initialise_guild(ctx, guild, _is_new, bot).await {
-            println!("Error initialising guild {why}");
+        if _is_new == Some(true) {
+            if let Err(why) = initialise_guild(ctx, guild, bot).await {
+                println!("Error initialising guild {why}");
+            }
         }
     }
 

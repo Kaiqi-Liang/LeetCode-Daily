@@ -74,6 +74,28 @@ macro_rules! send_message_with_leaderboard {
     };
 }
 
+macro_rules! construct_daily_message {
+    ($message:expr) => {
+        $message
+            .push("\nShare your code in the format below to confirm your completion of today's ")
+            .push_named_link("LeetCode", "https://leetcode.com/problemset")
+            .push(" Daily @everyone\n")
+            .push_safe("||```code```||\n\n")
+    };
+}
+
+macro_rules! construct_channel_message {
+    ($message:expr, $bot:ident, $channel:expr) => {
+        $message
+            .push("The default channel for ")
+            .mention(&$bot)
+            .push(" is ")
+            .channel($channel)
+            .push("\nYou can change it by using the following command")
+            .push_codeblock("/channel channel_id", None)
+    };
+}
+
 macro_rules! write_to_database {
     ($state:ident) => {
         $state.file.seek(SeekFrom::Start(0))?;
@@ -169,25 +191,34 @@ fn time_till_utc_midnight() -> TimeDelta {
     .signed_duration_since(Utc::now())
 }
 
+async fn initialise_guilds(
+    ctx: &Context,
+    guild_id: &GuildId,
+    state: &SharedState,
+) -> Result<(), Box<dyn Error>> {
+    let members = guild_id.members(&ctx.http, None, None).await?;
+    state.guilds.lock().await.insert(
+        *guild_id,
+        members
+            .into_iter()
+            .filter_map(|member| {
+                let user = member.user;
+                if user.bot {
+                    None
+                } else {
+                    Some((user.id, user))
+                }
+            })
+            .collect::<Users>(),
+    );
+    Ok(())
+}
+
 pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
     let mut data = ctx.data.write().await;
-    let state = get_shared_state!(data);
+    println!("Setting up guilds {:?}", ready.guilds);
     for guild in ready.guilds {
-        let members = guild.id.members(&ctx.http, None, None).await?;
-        state.guilds.lock().await.insert(
-            guild.id,
-            members
-                .into_iter()
-                .filter_map(|member| {
-                    let user = member.user;
-                    if user.bot {
-                        None
-                    } else {
-                        Some((user.id, user))
-                    }
-                })
-                .collect::<Users>(),
-        );
+        initialise_guilds(ctx, &guild.id, get_shared_state!(data)).await?;
     }
     Ok(())
 }
@@ -257,13 +288,13 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                     .mention(get_user_from_id!(guilds, guild_id, user_id))
                     .push(format!(": {votes}"));
             }
-            message.push(
-                    "\n\nShare your code in the format below to confirm your completion of today's ",
-                )
-                .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                .push(" Daily @everyone\n")
-                .push_safe("||```code```||\n\n");
-            send_message_with_leaderboard!(ctx, guilds, guild_id, &guild, message);
+            send_message_with_leaderboard!(
+                ctx,
+                guilds,
+                guild_id,
+                &guild,
+                construct_daily_message!(message.push('\n'))
+            );
         }
         write_to_database!(state);
     }
@@ -283,12 +314,7 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
             msg.channel_id
                 .say(
                     &ctx.http,
-                    MessageBuilder::new()
-                        .push("The default channel for ")
-                        .mention(&bot)
-                        .push(" is ")
-                        .channel(channel)
-                        .build(),
+                    construct_channel_message!(MessageBuilder::new(), bot, channel).build(),
                 )
                 .await?;
         }
@@ -500,7 +526,6 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
 pub async fn initialise_guild(
     ctx: Context,
     guild: Guild,
-    is_new: Option<bool>,
     bot: UserId,
 ) -> Result<(), Box<dyn Error>> {
     let mut data = ctx.data.write().await;
@@ -534,24 +559,23 @@ pub async fn initialise_guild(
         for channel in guild.channels.values() {
             if channel.kind == ChannelType::Text {
                 data.channel_id = Some(channel.id);
-                state.database.insert(guild.id, data);
-                write_to_database!(state);
-                if is_new.ok_or("_is_new == None")? {
+                let guild_id = &guild.id;
+                let mut message = MessageBuilder::new();
+                construct_daily_message!(construct_channel_message!(
+                    message.push("Welcome! "),
+                    bot,
                     channel
-                        .id
-                        .say(
-                            &ctx.http,
-                            MessageBuilder::new()
-                                .push("Welcome! The default channel for ")
-                                .mention(&bot)
-                                .push(" is ")
-                                .channel(channel.id)
-                                .push("\nYou can change it by using the following command")
-                                .push_codeblock("/channel channel_id", None)
-                                .build(),
-                        )
-                        .await?;
-                }
+                ));
+                state.database.insert(*guild_id, data);
+                write_to_database!(state);
+                initialise_guilds(&ctx, guild_id, state).await?;
+                send_message_with_leaderboard!(
+                    ctx,
+                    state.guilds.lock().await,
+                    guild_id,
+                    get_guild_from_id!(state, guild_id),
+                    message
+                );
                 return Ok(());
             }
         }
