@@ -213,7 +213,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             }
         }
 
-        println!("scheduled for next daily in {duration} seconds");
+        println!("Scheduled for next daily in {duration} seconds");
         time::sleep(Duration::from_secs(duration)).await;
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
@@ -356,7 +356,9 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                 .await?;
         }
         guild.poll_id = Some(poll(&ctx, guild, &guilds, guild_id, None).await?.id);
-        if !users_not_yet_completed.is_empty() {
+        if users_not_yet_completed.is_empty() {
+            message.push("Everyone has finished today's challenge, let's Grow Together!");
+        } else {
             message.push("Still waiting for ");
             for user in users_not_yet_completed {
                 message.mention(user);
