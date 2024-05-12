@@ -194,9 +194,11 @@ pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
 
 pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
     loop {
-        let duration: u64 = time_till_utc_midnight().num_seconds().try_into()?;
+        let mut duration: u64 = time_till_utc_midnight().num_seconds().try_into()?;
+        println!("{duration} seconds until next daily");
         if duration > NUM_SECS_IN_AN_HOUR {
             time::sleep(Duration::from_secs(duration - NUM_SECS_IN_AN_HOUR)).await;
+            duration = NUM_SECS_IN_AN_HOUR;
             let mut data = ctx.data.write().await;
             let state = get_shared_state!(data);
 
@@ -211,11 +213,12 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             }
         }
 
-        time::sleep(Duration::from_secs(NUM_SECS_IN_AN_HOUR)).await;
+        println!("scheduled for next daily in {duration} seconds");
+        time::sleep(Duration::from_secs(duration)).await;
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
         for (guild_id, guild) in state.database.iter_mut() {
-            guild.channel_id = None;
+            guild.poll_id = None;
             let guilds = state.guilds.lock().await;
             let mut message = MessageBuilder::new();
             message.push("Yesterday ");
@@ -246,7 +249,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                     "everyone completed the challenge! Awesome job to start a new day!"
                 })
                 .push(
-                    "\nShare your code in the format below to confirm your completion of today's ",
+                    "\n\nShare your code in the format below to confirm your completion of today's ",
                 )
                 .push_named_link("LeetCode", "https://leetcode.com/problemset")
                 .push(" Daily @everyone\n")
