@@ -81,13 +81,43 @@ macro_rules! send_message_with_leaderboard {
     };
 }
 
-macro_rules! construct_daily_message {
+macro_rules! send_help_message {
+    ($ctx:ident, $message:expr, $bot:ident, $channel:expr) => {
+        $channel.say(&$ctx.http, construct_format_message!(
+        construct_channel_message!(
+            $message.push("Hi I'm LeetCode Daily, here to motivate you to do question every single day :)\n\nI operate on a default channel\n"),
+            $bot,
+            $channel
+        ).push("\nI create a thread every day when a new daily question releases on ")
+        .push_named_link("LeetCode", "https://leetcode.com/problemset")
+        .push("\nSome other commands you can run are")
+        .push("\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/help`: Shows this help message, can be run anywhere\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread")
+        .push("\nTo submit your code you have to put it a spoiler tag and wrap it with ")
+        .push_safe("```code```")
+        .push("\nYou can start from this template and replace the language and code with your own\n")
+        ).build()).await?;
+    };
+}
+
+macro_rules! construct_format_message {
     ($message:expr) => {
         $message
+            .push("``")
+            .push(r"||```language")
+            .push("\n")
+            .push("code")
+            .push("\n")
+            .push("```||")
+            .push("``")
+    };
+}
+
+macro_rules! construct_daily_message {
+    ($message:expr) => {
+        construct_format_message!($message
             .push("\nShare your code in the format below to confirm your completion of today's ")
             .push_named_link("LeetCode", "https://leetcode.com/problemset")
-            .push(" Daily @everyone\n")
-            .push_safe("||```code```||\n\n")
+            .push(" Daily @everyone\n"))
     };
 }
 
@@ -349,10 +379,39 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
         .ok_or("This message was not received over the gateway")?;
     let guild = get_guild_from_id!(state, guild_id);
     let thread = get_thread_from_guild!(guild);
+    let channel = get_channel_from_guild!(guild);
     let code_block = Regex::new(r"(?s)\|\|```.+```\|\|")?.captures(&msg.content);
-    if thread != msg.channel_id {
-        let channel = get_channel_from_guild!(guild);
-        let mut message = MessageBuilder::new();
+    let mut message = MessageBuilder::new();
+    if msg.content == "/help" {
+        send_help_message!(ctx, message, bot, msg.channel_id);
+    } else if msg.content.starts_with("/channel") {
+        let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
+        if let Ok(channel_id) = channel_id.parse::<u64>() {
+            let channel_id = ChannelId::new(channel_id);
+            if let Ok(Channel::Guild(channel)) = channel_id.to_channel(&ctx.http).await {
+                if channel.kind != ChannelType::Text {
+                    send_invalid_channel_id_message!(ctx, msg);
+                } else {
+                    message
+                        .push("Successfully set channel to be ")
+                        .channel(channel_id);
+                    msg.channel_id.say(&ctx.http, message.build()).await?;
+                    guild.channel_id = Some(channel_id);
+                }
+            } else {
+                send_invalid_channel_id_message!(ctx, msg);
+            }
+        } else if msg.content == "/channel" {
+            send_channel_usage_message!(ctx, msg.channel_id);
+        } else if msg.channel_id != channel && msg.channel_id != thread {
+            msg.channel_id
+                .say(
+                    &ctx.http,
+                    construct_channel_message!(message, bot, channel).build(),
+                )
+                .await?;
+        }
+    } else if thread != msg.channel_id {
         if channel == msg.channel_id {
             if msg.content == "/poll" || code_block.is_some() {
                 channel
@@ -377,42 +436,8 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                         .build(),
                     )
                     .await?;
-            } else if msg.content == "/channel" {
-                send_channel_usage_message!(ctx, msg.channel_id);
             }
-        } else if msg.content == "/channel" {
-            msg.channel_id
-                .say(
-                    &ctx.http,
-                    construct_channel_message!(message, bot, channel).build(),
-                )
-                .await?;
         }
-        return Ok(());
-    }
-    let mut message = MessageBuilder::new();
-    if msg.content.starts_with("/channel") {
-        let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
-        if let Ok(channel_id) = channel_id.parse::<u64>() {
-            let channel_id = ChannelId::new(channel_id);
-            if let Ok(Channel::Guild(channel)) = channel_id.to_channel(&ctx.http).await {
-                if channel.kind != ChannelType::Text {
-                    send_invalid_channel_id_message!(ctx, msg);
-                } else {
-                    message
-                        .push("Successfully set channel to be ")
-                        .channel(channel_id);
-                    msg.channel_id.say(&ctx.http, message.build()).await?;
-                    guild.channel_id = Some(channel_id);
-                    write_to_database!(state);
-                }
-            } else {
-                send_invalid_channel_id_message!(ctx, msg);
-            }
-        } else {
-            send_channel_usage_message!(ctx, msg.channel_id);
-        }
-        return Ok(());
     } else if let Some(code_block) = code_block {
         let user = get_user_from_id!(guild.users, user_id);
         if user.submitted.is_some() {
@@ -457,19 +482,22 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                 message.mention(user);
             }
         }
-        message.push("\n\n");
-    } else if msg.content != "/scores" {
-        if msg.content == "/poll" {
-            guild.poll_id = Some(
-                poll(&ctx, guild, &state.guilds.lock().await, guild_id)
-                    .await?
-                    .id,
-            );
-            write_to_database!(state);
-        }
-        return Ok(());
+        send_message_with_leaderboard!(
+            ctx,
+            state.guilds.lock().await,
+            guild_id,
+            &guild,
+            message.push("\n\n")
+        );
+    } else if msg.content == "/scores" {
+        send_message_with_leaderboard!(ctx, state.guilds.lock().await, guild_id, &guild, message);
+    } else if msg.content == "/poll" {
+        guild.poll_id = Some(
+            poll(&ctx, guild, &state.guilds.lock().await, guild_id)
+                .await?
+                .id,
+        );
     }
-    send_message_with_leaderboard!(ctx, state.guilds.lock().await, guild_id, &guild, message);
     write_to_database!(state);
     Ok(())
 }
@@ -622,11 +650,8 @@ pub async fn initialise_guild(
                 data.channel_id = Some(channel.id);
                 let guild_id = &guild.id;
                 let mut message = MessageBuilder::new();
-                construct_daily_message!(construct_channel_message!(
-                    message.push("Welcome! "),
-                    bot,
-                    channel
-                ));
+                send_help_message!(ctx, MessageBuilder::new(), bot, channel);
+                construct_daily_message!(message.push("\n"));
                 create_thread!(ctx, data);
                 state.database.insert(*guild_id, data);
                 write_to_database!(state);
@@ -636,7 +661,7 @@ pub async fn initialise_guild(
                     state.guilds.lock().await,
                     guild_id,
                     get_guild_from_id!(state, guild_id),
-                    message
+                    message.push("\n\n")
                 );
                 return Ok(());
             }
