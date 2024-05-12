@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serenity::{
     all::{
         CreateInteractionResponse, CreateInteractionResponseMessage, CreateMessage,
-        CreateSelectMenuKind, EditMessage,
+        CreateSelectMenuKind, CreateThread, EditMessage,
     },
     builder::CreateSelectMenu,
     model::prelude::*,
@@ -33,6 +33,7 @@ type UserInfo = HashMap<UserId, Status>;
 pub struct Data {
     users: UserInfo,
     channel_id: Option<ChannelId>,
+    thread_id: Option<ChannelId>,
     poll_id: Option<MessageId>,
 }
 
@@ -63,9 +64,15 @@ macro_rules! get_channel_from_guild {
     };
 }
 
+macro_rules! get_thread_from_guild {
+    ($guild:expr) => {
+        $guild.thread_id.ok_or("No default thread")?
+    };
+}
+
 macro_rules! send_message_with_leaderboard {
     ($ctx:ident, $guilds:expr, $guild_id:ident, $guild:expr, $message:expr) => {
-        get_channel_from_guild!($guild)
+        get_thread_from_guild!($guild)
             .say(
                 &$ctx.http,
                 construct_leaderboard(&$guild.users, $guilds, $guild_id, &mut $message).build(),
@@ -160,6 +167,21 @@ macro_rules! send_invalid_channel_id_message {
     };
 }
 
+macro_rules! create_thread {
+    ($ctx:ident, $guild:ident) => {
+        $guild.thread_id = get_channel_from_guild!($guild)
+            .create_thread(
+                &$ctx.http,
+                CreateThread::new(Utc::now().format("%d/%m/%Y").to_string())
+                    .kind(ChannelType::PublicThread)
+                    .auto_archive_duration(AutoArchiveDuration::OneDay),
+            )
+            .await
+            .map(|channel| channel.id)
+            .ok();
+    };
+}
+
 fn construct_leaderboard<'a>(
     users: &UserInfo,
     guilds: MutexGuard<Guilds>,
@@ -235,11 +257,12 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
 
             for (guild_id, guild) in state.database.iter_mut() {
                 if guild.poll_id.is_some() {
-                    get_channel_from_guild!(guild)
-                        .say(&ctx.http, "An hour remaining before voting ends").await?;
+                    get_thread_from_guild!(guild)
+                        .say(&ctx.http, "An hour remaining before voting ends")
+                        .await?;
                 }
                 guild.poll_id = Some(
-                    poll(&ctx, guild, &state.guilds.lock().await, guild_id, None)
+                    poll(&ctx, guild, &state.guilds.lock().await, guild_id)
                         .await?
                         .id,
                 );
@@ -290,6 +313,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                     .mention(get_user_from_id!(guilds, guild_id, user_id))
                     .push(format!(": {votes}"));
             }
+            create_thread!(ctx, guild);
             send_message_with_leaderboard!(
                 ctx,
                 guilds,
@@ -310,20 +334,34 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
         .guild_id
         .ok_or("This message was not received over the gateway")?;
     let guild = get_guild_from_id!(state, guild_id);
-    let channel = get_channel_from_guild!(guild);
-    if channel != msg.channel_id {
-        if msg.content == "/channel" {
+    let thread = get_thread_from_guild!(guild);
+    let code_block = Regex::new(r"(?s)\|\|```.+```\|\|")?.captures(&msg.content);
+    if thread != msg.channel_id {
+        let channel = get_channel_from_guild!(guild);
+        let mut message = MessageBuilder::new();
+        if channel == msg.channel_id {
+            if Regex::new(r"/(scores|poll)")?.is_match(&msg.content) || code_block.is_some() {
+                channel
+                    .say(
+                        &ctx.http,
+                        message
+                            .push("Please send your commands in today's ")
+                            .channel(thread)
+                            .build(),
+                    )
+                    .await?;
+            }
+        } else if msg.content == "/channel" {
             msg.channel_id
                 .say(
                     &ctx.http,
-                    construct_channel_message!(MessageBuilder::new(), bot, channel).build(),
+                    construct_channel_message!(message, bot, channel).build(),
                 )
                 .await?;
         }
         return Ok(());
     }
     let mut message = MessageBuilder::new();
-    let code_block = Regex::new(r"(?s)\|\|```.+```\|\|")?.captures(&msg.content);
     if msg.content.starts_with("/channel") {
         let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
         if let Ok(channel_id) = channel_id.parse::<u64>() {
@@ -383,7 +421,7 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                 )
                 .await?;
         }
-        guild.poll_id = Some(poll(&ctx, guild, &guilds, guild_id, None).await?.id);
+        guild.poll_id = Some(poll(&ctx, guild, &guilds, guild_id).await?.id);
         if users_not_yet_completed.is_empty() {
             message.push("Everyone has finished today's challenge, let's Grow Together!");
         } else {
@@ -396,15 +434,9 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
     } else if msg.content != "/scores" {
         if msg.content == "/poll" {
             guild.poll_id = Some(
-                poll(
-                    &ctx,
-                    guild,
-                    &state.guilds.lock().await,
-                    guild_id,
-                    Some(msg.channel_id),
-                )
-                .await?
-                .id,
+                poll(&ctx, guild, &state.guilds.lock().await, guild_id)
+                    .await?
+                    .id,
             );
             write_to_database!(state);
         }
@@ -438,23 +470,22 @@ async fn poll(
     guild: &Data,
     guilds: &MutexGuard<'_, Guilds>,
     guild_id: &GuildId,
-    channel: Option<ChannelId>,
 ) -> Result<Message, Box<dyn Error>> {
-    let channel = channel.unwrap_or(get_channel_from_guild!(guild));
+    let thread = get_thread_from_guild!(guild);
     if let Some(poll_id) = guild.poll_id {
-        if let Ok(message) = channel.message(&ctx.http, poll_id).await {
+        if let Ok(message) = thread.message(&ctx.http, poll_id).await {
             message
                 .reply(&ctx.http, "You can vote via this poll")
                 .await?;
             Ok(message)
         } else {
-            channel
+            thread
                 .say(&ctx.http, "Poll message is not in this channel")
                 .await?;
             Err("Poll message is not in this channel".into())
         }
     } else {
-        channel
+        thread
             .send_message(
                 &ctx.http,
                 CreateMessage::new()
@@ -556,6 +587,7 @@ pub async fn initialise_guild(
                 })
                 .collect(),
             channel_id: None,
+            thread_id: None,
             poll_id: None,
         };
         for channel in guild.channels.values() {
@@ -568,6 +600,7 @@ pub async fn initialise_guild(
                     bot,
                     channel
                 ));
+                create_thread!(ctx, data);
                 state.database.insert(*guild_id, data);
                 write_to_database!(state);
                 initialise_guilds(&ctx, guild_id, state).await?;
