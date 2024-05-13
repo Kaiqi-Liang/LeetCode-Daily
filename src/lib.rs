@@ -1,4 +1,4 @@
-use chrono::{TimeDelta, TimeZone, Utc};
+use chrono::{Local, TimeDelta, TimeZone, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -216,7 +216,7 @@ macro_rules! create_thread {
         $guild.thread_id = get_channel_from_guild!($guild)
             .create_thread(
                 &$ctx.http,
-                CreateThread::new(Utc::now().format("%d/%m/%Y").to_string())
+                CreateThread::new(Local::now().format("%d/%m/%Y").to_string())
                     .kind(ChannelType::PublicThread)
                     .auto_archive_duration(AutoArchiveDuration::OneDay),
             )
@@ -484,7 +484,7 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
         }
         send_message_with_leaderboard!(
             ctx,
-            state.guilds.lock().await,
+            guilds,
             guild_id,
             &guild,
             message.push("\n\n")
