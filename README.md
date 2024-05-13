@@ -2,7 +2,7 @@
 
 ## Setup Instructions
 
-Add the discord bot to your server by navigating to this [URL](https://discord.com/oauth2/authorize?client_id=1235892312463245322&permissions=8&scope=bot).
+Add the discord bot to your server via this [invite link](https://discord.com/oauth2/authorize?client_id=1235892312463245322&permissions=8&scope=bot).
 
 ## Running Locally
 

@@ -1,4 +1,4 @@
-use chrono::{Local, TimeDelta, TimeZone, Utc};
+use chrono::{TimeDelta, TimeZone, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -212,7 +212,7 @@ macro_rules! create_thread {
         $guild.thread_id = get_channel_from_guild!($guild)
             .create_thread(
                 &$ctx.http,
-                CreateThread::new(Local::now().format("%d/%m/%Y").to_string())
+                CreateThread::new(Utc::now().format("%d/%m/%Y").to_string())
                     .kind(ChannelType::PublicThread)
                     .auto_archive_duration(AutoArchiveDuration::OneDay),
             )
@@ -307,6 +307,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
 
         println!("Scheduled for next daily in {duration} seconds");
         sleep(Duration::from_secs(duration)).await;
+        println!("It is now {:?}", Utc::now());
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
         for (guild_id, guild) in state.database.iter_mut() {
