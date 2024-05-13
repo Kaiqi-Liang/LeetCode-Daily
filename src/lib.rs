@@ -34,7 +34,7 @@ pub struct Data {
     active: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 struct Status {
     voted_for: Option<UserId>,
     submitted: Option<String>,
@@ -82,8 +82,10 @@ macro_rules! send_help_message {
     ($ctx:ident, $message:expr, $bot:ident, $channel:expr) => {
         $channel.say(&$ctx.http, construct_format_message!(
         construct_channel_message!(
-            $message.push("Hi I'm LeetCode Daily, here to motivate you to do question every single day :)\n\nI operate on a default channel and I create a thread in that channel every day when a new daily question releases on \n")
-                .push_named_link("LeetCode\n", "https://leetcode.com/problemset"),
+            $message
+                .push("Hi I'm LeetCode Daily, here to motivate you to do ")
+                .push_named_link("LeetCode", "https://leetcode.com/problemset")
+                .push(" questions every single day 🤓\n\nI operate on a default channel and I create a thread in that channel every day when a new daily question releases on \n"),
             $bot,
             $channel
         )
@@ -91,7 +93,7 @@ macro_rules! send_help_message {
         .push("\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/help`: Shows this help message, can be run anywhere\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [toggle]`: Check if the bot is currently active or toggle it on and off\n")
         .push("\nTo submit your code you have to put it a spoiler tag and wrap it with ")
         .push_safe("```code```")
-        .push("\nYou can start from this template and replace the language and code with your own\n")
+        .push(" so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again\n")
         ).build()).await?;
     };
 }
@@ -156,8 +158,8 @@ macro_rules! get_user_from_id {
             .get($user_id)
             .expect("User does not exist")
     };
-    ($users:expr, $user_id:ident) => {
-        $users.get_mut(&$user_id).ok_or("No user in guild")?
+    ($users:expr, $user_id:expr) => {
+        $users.entry($user_id).or_insert(Status::default())
     };
 }
 
@@ -337,7 +339,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             }
             message
                 .push(if penalties {
-                    "did not complete the challenge :( each lost 1 point as a penalty"
+                    "did not complete the challenge 😭 each lost 1 point as a penalty"
                 } else {
                     "everyone completed the challenge! Awesome job to start a new day!"
                 })
@@ -345,7 +347,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             let mut votes = votes.iter().collect::<Vec<_>>();
             votes.sort_by(|a, b| a.1.cmp(b.1));
             for (user_id, votes) in votes {
-                get_user_from_id!(guild.users, user_id).score += votes;
+                get_user_from_id!(guild.users, *user_id).score += votes;
                 message
                     .mention(get_user_from_id!(state.guilds, guild_id, user_id))
                     .push(format!(": {votes}\n"));
@@ -364,160 +366,174 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
 }
 
 pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<dyn Error>> {
-    let mut data = ctx.data.write().await;
-    let state = get_shared_state!(data);
-    let user_id = &msg.author.id;
-    let guild_id = &msg
-        .guild_id
-        .ok_or("This message was not received over the gateway")?;
-    let data = get_guild_from_id!(state, guild_id);
-    let thread = get_thread_from_guild!(data);
-    let channel = get_channel_from_guild!(data);
-    let code_block = Regex::new(r"(?s)\|\|```.+```\|\|")?;
-    let mut message = MessageBuilder::new();
-    if msg.content.starts_with("/active") {
-        let args = msg.content.split(' ').collect::<Vec<&str>>();
-        msg.channel_id
-            .say(
-                &ctx.http,
-                (if let Some(message_builder) = match args.len() {
-                    1 => {
-                        if msg.content == "/active" {
-                            Some(message.mention(&bot).push(format!(
-                                " is {}active",
-                                if data.active { "" } else { "not " }
-                            )))
-                        } else {
-                            None
-                        }
-                    }
-                    2 => {
-                        if msg.content == "/active toggle" {
-                            data.active = !data.active;
-                            Some(message.mention(&bot).push(format!(
-                                " is now {}",
-                                if data.active { "active" } else { "paused" }
-                            )))
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                } {
-                    message_builder
-                } else {
-                    message
-                        .push("Usage:")
-                        .push_codeblock("/active [toggle]", None)
-                })
-                .build(),
-            )
-            .await?;
-    } else if !data.active {
-    } else if msg.content == "/help" {
-        send_help_message!(ctx, message, bot, msg.channel_id);
-    } else if msg.content.starts_with("/channel") {
-        let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
-        if let Ok(channel_id) = channel_id.parse::<u64>() {
-            let channel_id = ChannelId::new(channel_id);
-            if let Ok(Channel::Guild(channel)) = channel_id.to_channel(&ctx.http).await {
-                if channel.kind != ChannelType::Text {
-                    send_invalid_channel_id_message!(ctx, msg);
-                } else {
-                    message
-                        .push("Successfully set channel to be ")
-                        .channel(channel_id);
-                    msg.channel_id.say(&ctx.http, message.build()).await?;
-                    data.channel_id = Some(channel_id);
-                }
-            } else {
-                send_invalid_channel_id_message!(ctx, msg);
-            }
-        } else if msg.channel_id != channel && msg.channel_id != thread {
+    if let Some(guild_id) = &msg.guild_id {
+        let mut data = ctx.data.write().await;
+        let state = get_shared_state!(data);
+        let user_id = &msg.author.id;
+        let data = get_guild_from_id!(state, guild_id);
+        let thread = get_thread_from_guild!(data);
+        let channel = get_channel_from_guild!(data);
+        let code_block = Regex::new(r"(?s)\|\|```.+```\|\|")?;
+        let mut message = MessageBuilder::new();
+        if msg.content.starts_with("/active") {
+            let args = msg.content.split(' ').collect::<Vec<&str>>();
             msg.channel_id
                 .say(
                     &ctx.http,
-                    construct_channel_message!(message, bot, channel).build(),
+                    (if let Some(message_builder) = match args.len() {
+                        1 => {
+                            if msg.content == "/active" {
+                                Some(message.mention(&bot).push(format!(
+                                    " is {}active",
+                                    if data.active { "" } else { "not " }
+                                )))
+                            } else {
+                                None
+                            }
+                        }
+                        2 => {
+                            if msg.content == "/active toggle" {
+                                data.active = !data.active;
+                                Some(message.mention(&bot).push(format!(
+                                    " is now {}",
+                                    if data.active { "active" } else { "paused" }
+                                )))
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    } {
+                        message_builder
+                    } else {
+                        message
+                            .push("Usage:")
+                            .push_codeblock("/active [toggle]", None)
+                    })
+                    .build(),
                 )
                 .await?;
-        } else {
-            send_channel_usage_message!(ctx, msg.channel_id);
-        }
-    } else if thread != msg.channel_id {
-        if channel == msg.channel_id {
-            if msg.content == "/poll" || code_block.is_match(&msg.content) {
-                channel
-                    .say(
-                        &ctx.http,
+        } else if !data.active {
+        } else if msg.content == "/help" {
+            send_help_message!(ctx, message, bot, msg.channel_id);
+        } else if msg.content.starts_with("/channel") {
+            let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
+            if let Ok(channel_id) = channel_id.parse::<u64>() {
+                let channel_id = ChannelId::new(channel_id);
+                if let Ok(Channel::Guild(channel)) = channel_id.to_channel(&ctx.http).await {
+                    if channel.kind != ChannelType::Text {
+                        send_invalid_channel_id_message!(ctx, msg);
+                    } else {
                         message
-                            .push("Please send your command and code in today's ")
-                            .channel(thread)
-                            .build(),
-                    )
-                    .await?;
-            } else if msg.content == "/scores" {
+                            .push("Successfully set channel to be ")
+                            .channel(channel_id);
+                        msg.channel_id.say(&ctx.http, message.build()).await?;
+                        data.channel_id = Some(channel_id);
+                    }
+                } else {
+                    send_invalid_channel_id_message!(ctx, msg);
+                }
+            } else if msg.channel_id != channel && msg.channel_id != thread {
                 msg.channel_id
                     .say(
                         &ctx.http,
-                        construct_leaderboard(&data.users, &state.guilds, guild_id, &mut message)
-                            .build(),
+                        construct_channel_message!(message, bot, channel).build(),
                     )
                     .await?;
+            } else {
+                send_channel_usage_message!(ctx, msg.channel_id);
             }
-        }
-    } else if code_block.is_match(&msg.content) {
-        let user = get_user_from_id!(data.users, user_id);
-        if user.submitted.is_some() {
-            message.push("You have already submitted today");
-        } else {
-            user.submitted = Some(msg.link());
-            let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
-            user.score += score;
-            message
+        } else if thread != msg.channel_id {
+            if channel == msg.channel_id {
+                if msg.content == "/poll" || code_block.is_match(&msg.content) {
+                    channel
+                        .say(
+                            &ctx.http,
+                            message
+                                .push("Please send your command and code in today's ")
+                                .channel(thread)
+                                .build(),
+                        )
+                        .await?;
+                } else if msg.content == "/scores" {
+                    msg.channel_id
+                        .say(
+                            &ctx.http,
+                            construct_leaderboard(
+                                &data.users,
+                                &state.guilds,
+                                guild_id,
+                                &mut message,
+                            )
+                            .build(),
+                        )
+                        .await?;
+                }
+            }
+        } else if code_block.is_match(&msg.content) {
+            let user = get_user_from_id!(data.users, *user_id);
+            if user.submitted.is_some() {
+                message.push("You have already submitted today");
+            } else {
+                user.submitted = Some(msg.link());
+                let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
+                user.score += score;
+                message
             .push("Congrats to ")
             .mention(get_user_from_id!(state.guilds, guild_id, user_id))
             .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.score));
-            let users_not_yet_completed = data
-                .users
-                .iter()
-                .filter_map(|(id, user)| {
-                    if user.submitted.is_some() {
-                        None
-                    } else {
-                        Some(get_user_from_id!(state.guilds, guild_id, id))
+                let users_not_yet_completed = data
+                    .users
+                    .iter()
+                    .filter_map(|(id, user)| {
+                        if user.submitted.is_some() {
+                            None
+                        } else {
+                            Some(get_user_from_id!(state.guilds, guild_id, id))
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                if let Some(poll_id) = data.poll_id {
+                    msg.channel_id
+                        .edit_message(
+                            &ctx.http,
+                            poll_id,
+                            EditMessage::new().content(build_submission_message(
+                                data,
+                                &state.guilds,
+                                guild_id,
+                            )),
+                        )
+                        .await?;
+                }
+                if users_not_yet_completed.is_empty() {
+                    message.push("Everyone has finished today's challenge, let's Grow Together!");
+                } else {
+                    message.push("Still waiting for ");
+                    for user in users_not_yet_completed {
+                        message.mention(user);
                     }
-                })
-                .collect::<Vec<_>>();
-            if let Some(poll_id) = data.poll_id {
-                msg.channel_id
-                    .edit_message(
-                        &ctx.http,
-                        poll_id,
-                        EditMessage::new().content(build_submission_message(
-                            data,
-                            &state.guilds,
-                            guild_id,
-                        )),
-                    )
-                    .await?;
-            }
-            if users_not_yet_completed.is_empty() {
-                message.push("Everyone has finished today's challenge, let's Grow Together!");
-            } else {
-                message.push("Still waiting for ");
-                for user in users_not_yet_completed {
-                    message.mention(user);
                 }
             }
+            send_message_with_leaderboard!(
+                ctx,
+                &state.guilds,
+                guild_id,
+                &data,
+                message.push("\n\n")
+            );
+            data.poll_id = Some(poll(&ctx, data, &state.guilds, guild_id).await?.id);
+        } else if msg.content == "/scores" {
+            send_message_with_leaderboard!(ctx, &state.guilds, guild_id, &data, message);
+        } else if msg.content == "/poll" {
+            data.poll_id = Some(poll(&ctx, data, &state.guilds, guild_id).await?.id);
         }
-        send_message_with_leaderboard!(ctx, &state.guilds, guild_id, &data, message.push("\n\n"));
-        data.poll_id = Some(poll(&ctx, data, &state.guilds, guild_id).await?.id);
-    } else if msg.content == "/scores" {
-        send_message_with_leaderboard!(ctx, &state.guilds, guild_id, &data, message);
-    } else if msg.content == "/poll" {
-        data.poll_id = Some(poll(&ctx, data, &state.guilds, guild_id).await?.id);
+        write_to_database!(state);
+    } else {
+        msg.channel_id
+            .say(&ctx.http, "Please don't slide into my dm 😜")
+            .await?;
     }
-    write_to_database!(state);
     Ok(())
 }
 
