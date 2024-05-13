@@ -380,7 +380,7 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
     let guild = get_guild_from_id!(state, guild_id);
     let thread = get_thread_from_guild!(guild);
     let channel = get_channel_from_guild!(guild);
-    let code_block = Regex::new(r"(?s)\|\|```.+```\|\|")?.captures(&msg.content);
+    let code_block = Regex::new(r"(?s)\|\|```.+```\|\|")?;
     let mut message = MessageBuilder::new();
     if msg.content == "/help" {
         send_help_message!(ctx, message, bot, msg.channel_id);
@@ -413,7 +413,7 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
         }
     } else if thread != msg.channel_id {
         if channel == msg.channel_id {
-            if msg.content == "/poll" || code_block.is_some() {
+            if msg.content == "/poll" || code_block.is_match(&msg.content) {
                 channel
                     .say(
                         &ctx.http,
@@ -438,14 +438,12 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                     .await?;
             }
         }
-    } else if let Some(code_block) = code_block {
+    } else if code_block.is_match(&msg.content) {
         let user = get_user_from_id!(guild.users, user_id);
         if user.submitted.is_some() {
             return Ok(());
         }
-        user.submitted = code_block
-            .get(0)
-            .map(|code_block| code_block.as_str().to_string());
+        user.submitted = Some(msg.link());
         let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
         user.score += score;
         message
