@@ -355,7 +355,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                 get_user_from_id!(guild.users, user_id).score += votes;
                 message
                     .mention(get_user_from_id!(guilds, guild_id, user_id))
-                    .push(format!(": {votes}"));
+                    .push(format!(": {votes}\n"));
             }
             create_thread!(ctx, guild);
             send_message_with_leaderboard!(
@@ -401,8 +401,6 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
             } else {
                 send_invalid_channel_id_message!(ctx, msg);
             }
-        } else if msg.content == "/channel" {
-            send_channel_usage_message!(ctx, msg.channel_id);
         } else if msg.channel_id != channel && msg.channel_id != thread {
             msg.channel_id
                 .say(
@@ -410,6 +408,8 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                     construct_channel_message!(message, bot, channel).build(),
                 )
                 .await?;
+        } else {
+            send_channel_usage_message!(ctx, msg.channel_id);
         }
     } else if thread != msg.channel_id {
         if channel == msg.channel_id {
