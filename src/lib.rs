@@ -31,6 +31,7 @@ pub struct Data {
     channel_id: Option<ChannelId>,
     thread_id: Option<ChannelId>,
     poll_id: Option<MessageId>,
+    active: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -81,13 +82,13 @@ macro_rules! send_help_message {
     ($ctx:ident, $message:expr, $bot:ident, $channel:expr) => {
         $channel.say(&$ctx.http, construct_format_message!(
         construct_channel_message!(
-            $message.push("Hi I'm LeetCode Daily, here to motivate you to do question every single day :)\n\nI operate on a default channel\n"),
+            $message.push("Hi I'm LeetCode Daily, here to motivate you to do question every single day :)\n\nI operate on a default channel and I create a thread in that channel every day when a new daily question releases on \n")
+                .push_named_link("LeetCode\n", "https://leetcode.com/problemset"),
             $bot,
             $channel
-        ).push("\nI create a thread every day when a new daily question releases on ")
-        .push_named_link("LeetCode", "https://leetcode.com/problemset")
+        )
         .push("\nSome other commands you can run are")
-        .push("\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/help`: Shows this help message, can be run anywhere\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n")
+        .push("\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/help`: Shows this help message, can be run anywhere\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [toggle]`: Check if the bot is currently active or toggle it on and off\n")
         .push("\nTo submit your code you have to put it a spoiler tag and wrap it with ")
         .push_safe("```code```")
         .push("\nYou can start from this template and replace the language and code with your own\n")
@@ -135,7 +136,7 @@ macro_rules! write_to_database {
         $state.file.set_len(0)?;
         $state
             .file
-            .write_all(serde_json::to_string_pretty(&$state.database)?.as_bytes())?;
+            .write_all(serde_json::to_string_pretty(&$state.database)?.as_bytes())?
     };
 }
 
@@ -374,7 +375,46 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
     let channel = get_channel_from_guild!(data);
     let code_block = Regex::new(r"(?s)\|\|```.+```\|\|")?;
     let mut message = MessageBuilder::new();
-    if msg.content == "/help" {
+    if msg.content.starts_with("/active") {
+        let args = msg.content.split(' ').collect::<Vec<&str>>();
+        msg.channel_id
+            .say(
+                &ctx.http,
+                (if let Some(message_builder) = match args.len() {
+                    1 => {
+                        if msg.content == "/active" {
+                            Some(message.mention(&bot).push(format!(
+                                " is {}active",
+                                if data.active { "" } else { "not " }
+                            )))
+                        } else {
+                            None
+                        }
+                    }
+                    2 => {
+                        if msg.content == "/active toggle" {
+                            data.active = !data.active;
+                            Some(message.mention(&bot).push(format!(
+                                " is now {}",
+                                if data.active { "active" } else { "paused" }
+                            )))
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                } {
+                    message_builder
+                } else {
+                    message
+                        .push("Usage:")
+                        .push_codeblock("/active [toggle]", None)
+                })
+                .build(),
+            )
+            .await?;
+    } else if !data.active {
+    } else if msg.content == "/help" {
         send_help_message!(ctx, message, bot, msg.channel_id);
     } else if msg.content.starts_with("/channel") {
         let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
@@ -544,6 +584,7 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
             .ok_or("This interaction was not received over the gateway")?;
         let data = get_guild_from_id!(state, guild_id);
         if component.data.custom_id == CUSTOM_ID
+            && data.active
             && data
                 .poll_id
                 .is_some_and(|poll_id| poll_id == component.message.id)
@@ -619,6 +660,7 @@ pub async fn initialise_guild(
             channel_id: None,
             thread_id: None,
             poll_id: None,
+            active: true,
         };
         for channel in guild.channels.values() {
             if channel.kind == ChannelType::Text {
