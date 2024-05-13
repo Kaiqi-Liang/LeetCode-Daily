@@ -16,13 +16,9 @@ use std::{
     error::Error,
     fs::File,
     io::{Seek, SeekFrom, Write},
-    sync::Arc,
     time::Duration,
 };
-use tokio::{
-    sync::{Mutex, MutexGuard},
-    time,
-};
+use tokio::time::sleep;
 
 type Guilds = HashMap<GuildId, Users>;
 type Users = HashMap<UserId, User>;
@@ -45,7 +41,7 @@ struct Status {
 }
 
 pub struct SharedState {
-    pub guilds: Arc<Mutex<Guilds>>,
+    pub guilds: Guilds,
     pub file: File,
     pub database: Database,
 }
@@ -77,7 +73,7 @@ macro_rules! send_message_with_leaderboard {
                 &$ctx.http,
                 construct_leaderboard(&$guild.users, $guilds, $guild_id, &mut $message).build(),
             )
-            .await?;
+            .await?
     };
 }
 
@@ -91,7 +87,7 @@ macro_rules! send_help_message {
         ).push("\nI create a thread every day when a new daily question releases on ")
         .push_named_link("LeetCode", "https://leetcode.com/problemset")
         .push("\nSome other commands you can run are")
-        .push("\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/help`: Shows this help message, can be run anywhere\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread")
+        .push("\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/help`: Shows this help message, can be run anywhere\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n")
         .push("\nTo submit your code you have to put it a spoiler tag and wrap it with ")
         .push_safe("```code```")
         .push("\nYou can start from this template and replace the language and code with your own\n")
@@ -228,7 +224,7 @@ macro_rules! create_thread {
 
 fn construct_leaderboard<'a>(
     users: &UserInfo,
-    guilds: MutexGuard<Guilds>,
+    guilds: &Guilds,
     guild_id: &GuildId,
     message: &'a mut MessageBuilder,
 ) -> &'a mut MessageBuilder {
@@ -260,10 +256,10 @@ fn time_till_utc_midnight() -> TimeDelta {
 async fn initialise_guilds(
     ctx: &Context,
     guild_id: &GuildId,
-    state: &SharedState,
+    state: &mut SharedState,
 ) -> Result<(), Box<dyn Error>> {
     let members = guild_id.members(&ctx.http, None, None).await?;
-    state.guilds.lock().await.insert(
+    state.guilds.insert(
         *guild_id,
         members
             .into_iter()
@@ -294,7 +290,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
         let mut duration: u64 = time_till_utc_midnight().num_seconds().try_into()?;
         println!("{duration} seconds until next daily");
         if duration > NUM_SECS_IN_AN_HOUR {
-            time::sleep(Duration::from_secs(duration - NUM_SECS_IN_AN_HOUR)).await;
+            sleep(Duration::from_secs(duration - NUM_SECS_IN_AN_HOUR)).await;
             duration = NUM_SECS_IN_AN_HOUR;
             let mut data = ctx.data.write().await;
             let state = get_shared_state!(data);
@@ -305,21 +301,16 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                         .say(&ctx.http, "An hour remaining before voting ends")
                         .await?;
                 }
-                guild.poll_id = Some(
-                    poll(&ctx, guild, &state.guilds.lock().await, guild_id)
-                        .await?
-                        .id,
-                );
+                guild.poll_id = Some(poll(&ctx, guild, &state.guilds, guild_id).await?.id);
             }
         }
 
         println!("Scheduled for next daily in {duration} seconds");
-        time::sleep(Duration::from_secs(duration)).await;
+        sleep(Duration::from_secs(duration)).await;
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
         for (guild_id, guild) in state.database.iter_mut() {
             guild.poll_id = None;
-            let guilds = state.guilds.lock().await;
             let mut message = MessageBuilder::new();
             message.push("Yesterday ");
             let mut penalties = false;
@@ -333,7 +324,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                 }
                 if user.submitted.is_none() {
                     penalties = true;
-                    message.mention(get_user_from_id!(guilds, guild_id, user_id));
+                    message.mention(get_user_from_id!(state.guilds, guild_id, user_id));
                     if user.score > 0 {
                         user.score -= 1;
                     }
@@ -354,13 +345,13 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             for (user_id, votes) in votes {
                 get_user_from_id!(guild.users, user_id).score += votes;
                 message
-                    .mention(get_user_from_id!(guilds, guild_id, user_id))
+                    .mention(get_user_from_id!(state.guilds, guild_id, user_id))
                     .push(format!(": {votes}\n"));
             }
             create_thread!(ctx, guild);
             send_message_with_leaderboard!(
                 ctx,
-                guilds,
+                &state.guilds,
                 guild_id,
                 &guild,
                 construct_daily_message!(message.push('\n'))
@@ -377,9 +368,9 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
     let guild_id = &msg
         .guild_id
         .ok_or("This message was not received over the gateway")?;
-    let guild = get_guild_from_id!(state, guild_id);
-    let thread = get_thread_from_guild!(guild);
-    let channel = get_channel_from_guild!(guild);
+    let data = get_guild_from_id!(state, guild_id);
+    let thread = get_thread_from_guild!(data);
+    let channel = get_channel_from_guild!(data);
     let code_block = Regex::new(r"(?s)\|\|```.+```\|\|")?;
     let mut message = MessageBuilder::new();
     if msg.content == "/help" {
@@ -396,7 +387,7 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                         .push("Successfully set channel to be ")
                         .channel(channel_id);
                     msg.channel_id.say(&ctx.http, message.build()).await?;
-                    guild.channel_id = Some(channel_id);
+                    data.channel_id = Some(channel_id);
                 }
             } else {
                 send_invalid_channel_id_message!(ctx, msg);
@@ -427,84 +418,69 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                 msg.channel_id
                     .say(
                         &ctx.http,
-                        construct_leaderboard(
-                            &guild.users,
-                            state.guilds.lock().await,
-                            guild_id,
-                            &mut message,
-                        )
-                        .build(),
+                        construct_leaderboard(&data.users, &state.guilds, guild_id, &mut message)
+                            .build(),
                     )
                     .await?;
             }
         }
     } else if code_block.is_match(&msg.content) {
-        let user = get_user_from_id!(guild.users, user_id);
+        let user = get_user_from_id!(data.users, user_id);
         if user.submitted.is_some() {
-            return Ok(());
-        }
-        user.submitted = Some(msg.link());
-        let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
-        user.score += score;
-        message
-            .push("Congrats to ")
-            .mention(get_user_from_id!(state.guilds.lock().await, guild_id, user_id))
-            .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.score));
-        let guilds = state.guilds.lock().await;
-        let users_not_yet_completed = guild
-            .users
-            .iter()
-            .filter_map(|(id, user)| {
-                if user.submitted.is_some() {
-                    None
-                } else {
-                    Some(get_user_from_id!(guilds, guild_id, id))
-                }
-            })
-            .collect::<Vec<_>>();
-        if let Some(poll_id) = guild.poll_id {
-            msg.channel_id
-                .edit_message(
-                    &ctx.http,
-                    poll_id,
-                    EditMessage::new().content(build_submission_message(guild, &guilds, guild_id)),
-                )
-                .await?;
-        }
-        guild.poll_id = Some(poll(&ctx, guild, &guilds, guild_id).await?.id);
-        if users_not_yet_completed.is_empty() {
-            message.push("Everyone has finished today's challenge, let's Grow Together!");
+            message.push("You have already submitted today");
         } else {
-            message.push("Still waiting for ");
-            for user in users_not_yet_completed {
-                message.mention(user);
+            user.submitted = Some(msg.link());
+            let score: usize = (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
+            user.score += score;
+            message
+            .push("Congrats to ")
+            .mention(get_user_from_id!(state.guilds, guild_id, user_id))
+            .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.score));
+            let users_not_yet_completed = data
+                .users
+                .iter()
+                .filter_map(|(id, user)| {
+                    if user.submitted.is_some() {
+                        None
+                    } else {
+                        Some(get_user_from_id!(state.guilds, guild_id, id))
+                    }
+                })
+                .collect::<Vec<_>>();
+            if let Some(poll_id) = data.poll_id {
+                msg.channel_id
+                    .edit_message(
+                        &ctx.http,
+                        poll_id,
+                        EditMessage::new().content(build_submission_message(
+                            data,
+                            &state.guilds,
+                            guild_id,
+                        )),
+                    )
+                    .await?;
+            }
+            if users_not_yet_completed.is_empty() {
+                message.push("Everyone has finished today's challenge, let's Grow Together!");
+            } else {
+                message.push("Still waiting for ");
+                for user in users_not_yet_completed {
+                    message.mention(user);
+                }
             }
         }
-        send_message_with_leaderboard!(
-            ctx,
-            guilds,
-            guild_id,
-            &guild,
-            message.push("\n\n")
-        );
+        send_message_with_leaderboard!(ctx, &state.guilds, guild_id, &data, message.push("\n\n"));
+        data.poll_id = Some(poll(&ctx, data, &state.guilds, guild_id).await?.id);
     } else if msg.content == "/scores" {
-        send_message_with_leaderboard!(ctx, state.guilds.lock().await, guild_id, &guild, message);
+        send_message_with_leaderboard!(ctx, &state.guilds, guild_id, &data, message);
     } else if msg.content == "/poll" {
-        guild.poll_id = Some(
-            poll(&ctx, guild, &state.guilds.lock().await, guild_id)
-                .await?
-                .id,
-        );
+        data.poll_id = Some(poll(&ctx, data, &state.guilds, guild_id).await?.id);
     }
     write_to_database!(state);
     Ok(())
 }
 
-fn build_submission_message(
-    guild: &Data,
-    guilds: &MutexGuard<Guilds>,
-    guild_id: &GuildId,
-) -> String {
+fn build_submission_message(guild: &Data, guilds: &Guilds, guild_id: &GuildId) -> String {
     let mut message = MessageBuilder::new();
     message.push("Choose your favourite submission\n");
     for (id, status) in guild.users.iter() {
@@ -521,7 +497,7 @@ fn build_submission_message(
 async fn poll(
     ctx: &Context,
     guild: &Data,
-    guilds: &MutexGuard<'_, Guilds>,
+    guilds: &Guilds,
     guild_id: &GuildId,
 ) -> Result<Message, Box<dyn Error>> {
     let thread = get_thread_from_guild!(guild);
@@ -565,15 +541,15 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
         let guild_id = &component
             .guild_id
             .ok_or("This interaction was not received over the gateway")?;
-        let guild = get_guild_from_id!(state, guild_id);
+        let data = get_guild_from_id!(state, guild_id);
         if component.data.custom_id == CUSTOM_ID
-            && guild
+            && data
                 .poll_id
                 .is_some_and(|poll_id| poll_id == component.message.id)
         {
             if let ComponentInteractionDataKind::UserSelect { values } = &component.data.kind {
                 let voted_for = values.first().ok_or("Did not select a single value")?;
-                if let Some(voted_for_status) = guild.users.get(voted_for) {
+                if let Some(voted_for_status) = data.users.get(voted_for) {
                     if voted_for_status.submitted.is_none() {
                         return acknowledge_interaction!(
                             ctx,
@@ -592,7 +568,7 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
                 if *voted_for == user_id {
                     return acknowledge_interaction!(ctx, component, "Cannot vote for yourself");
                 }
-                let user = get_user_from_id!(guild.users, user_id);
+                let user = get_user_from_id!(data.users, user_id);
                 user.voted_for = Some(*voted_for);
                 write_to_database!(state);
                 return acknowledge_interaction!(
@@ -600,7 +576,7 @@ pub async fn vote(ctx: Context, interaction: Interaction) -> Result<(), Box<dyn 
                     component,
                     format!(
                         "Successfully submitted your vote for {}",
-                        get_user_from_id!(state.guilds.lock().await, guild_id, voted_for)
+                        get_user_from_id!(state.guilds, guild_id, voted_for)
                     )
                 );
             }
@@ -656,7 +632,7 @@ pub async fn initialise_guild(
                 initialise_guilds(&ctx, guild_id, state).await?;
                 send_message_with_leaderboard!(
                     ctx,
-                    state.guilds.lock().await,
+                    &state.guilds,
                     guild_id,
                     get_guild_from_id!(state, guild_id),
                     message.push("\n\n")

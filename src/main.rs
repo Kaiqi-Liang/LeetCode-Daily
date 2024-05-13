@@ -2,7 +2,7 @@ use leetcode_daily::{
     initialise_guild, respond, schedule_daily_reset, setup, vote, SharedState, State,
 };
 use serenity::{async_trait, model::prelude::*, prelude::*};
-use std::{collections::HashMap, env::var, error::Error, fs::OpenOptions, io::Read, sync::Arc};
+use std::{collections::HashMap, env::var, error::Error, fs::OpenOptions, io::Read};
 use tokio::{main, spawn};
 
 struct Handler;
@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         file.read_to_string(&mut contents)?;
         let mut data = client.data.write().await;
         data.insert::<State>(SharedState {
-            guilds: Arc::new(Mutex::new(HashMap::new())),
+            guilds: HashMap::new(),
             file,
             database: serde_json::from_str(&contents)?,
         });
