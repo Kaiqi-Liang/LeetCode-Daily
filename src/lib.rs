@@ -79,15 +79,16 @@ macro_rules! send_message_with_leaderboard {
 }
 
 macro_rules! send_help_message {
-    ($ctx:ident, $message:expr, $bot:ident, $channel:expr) => {
+    ($ctx:ident, $message:expr, $bot:ident, $channel:expr, $default_channel:expr, $thread:expr) => {
         $channel.say(&$ctx.http, construct_format_message!(
         construct_channel_message!(
             $message
                 .push("Hi I'm LeetCode Daily, here to motivate you to do ")
                 .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                .push(" questions every single day 🤓\n\nI operate on a default channel and I create a thread in that channel every day when a new daily question releases on \n"),
+                .push(" questions every single day 🤓\n\nI operate on a default channel and I create a thread in that channel every time a new daily question comes out\n"),
             $bot,
-            $channel
+            $default_channel,
+            $thread
         )
         .push("\nSome other commands you can run are")
         .push("\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/help`: Shows this help message, can be run anywhere\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [toggle]`: Check if the bot is currently active or toggle it on and off\n")
@@ -121,12 +122,14 @@ macro_rules! construct_daily_message {
 }
 
 macro_rules! construct_channel_message {
-    ($message:expr, $bot:ident, $channel:expr) => {
+    ($message:expr, $bot:ident, $channel:expr, $thread:expr) => {
         $message
             .push("The default channel for ")
             .mention(&$bot)
             .push(" is ")
             .channel($channel)
+            .push(" and today's thread is ")
+            .channel($thread)
             .push("\nYou can change it by using the following command")
             .push_codeblock("/channel channel_id", None)
     };
@@ -298,13 +301,13 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             let mut data = ctx.data.write().await;
             let state = get_shared_state!(data);
 
-            for (guild_id, guild) in state.database.iter_mut() {
-                if guild.poll_id.is_some() {
-                    get_thread_from_guild!(guild)
+            for (guild_id, data) in state.database.iter_mut() {
+                if data.poll_id.is_some() {
+                    get_thread_from_guild!(data)
                         .say(&ctx.http, "An hour remaining before voting ends")
                         .await?;
                 }
-                guild.poll_id = Some(poll(&ctx, guild, &state.guilds, guild_id).await?.id);
+                data.poll_id = Some(poll(&ctx, data, &state.guilds, guild_id).await?.id);
             }
         }
 
@@ -343,7 +346,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                 } else {
                     "everyone completed the challenge! Awesome job to start a new day!"
                 })
-                .push("\nThe number of votes received:");
+                .push("\nThe number of votes received:\n");
             let mut votes = votes.iter().collect::<Vec<_>>();
             votes.sort_by(|a, b| a.1.cmp(b.1));
             for (user_id, votes) in votes {
@@ -358,7 +361,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
                 &state.guilds,
                 guild_id,
                 &guild,
-                construct_daily_message!(message.push('\n'))
+                construct_daily_message!(message).push('\n')
             );
         }
         write_to_database!(state);
@@ -415,7 +418,7 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                 .await?;
         } else if !data.active {
         } else if msg.content == "/help" {
-            send_help_message!(ctx, message, bot, msg.channel_id);
+            send_help_message!(ctx, message, bot, msg.channel_id, channel, thread);
         } else if msg.content.starts_with("/channel") {
             let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
             if let Ok(channel_id) = channel_id.parse::<u64>() {
@@ -437,7 +440,13 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                 msg.channel_id
                     .say(
                         &ctx.http,
-                        construct_channel_message!(message, bot, channel).build(),
+                        construct_channel_message!(
+                            message,
+                            bot,
+                            channel,
+                            get_thread_from_guild!(data)
+                        )
+                        .build(),
                     )
                     .await?;
             } else {
@@ -683,7 +692,14 @@ pub async fn initialise_guild(
                 data.channel_id = Some(channel.id);
                 let guild_id = &guild.id;
                 let mut message = MessageBuilder::new();
-                send_help_message!(ctx, MessageBuilder::new(), bot, channel);
+                send_help_message!(
+                    ctx,
+                    MessageBuilder::new(),
+                    bot,
+                    channel,
+                    channel.id,
+                    get_thread_from_guild!(data)
+                );
                 construct_daily_message!(message.push("\n"));
                 create_thread!(ctx, data);
                 state.database.insert(*guild_id, data);
