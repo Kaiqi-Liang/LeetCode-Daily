@@ -342,7 +342,7 @@ pub async fn schedule_daily_reset(ctx: Context) -> Result<(), Box<dyn Error>> {
             }
             message
                 .push(if penalties {
-                    "did not complete the challenge 😭 each lost 1 point as a penalty"
+                    " did not complete the challenge 😭 each lost 1 point as a penalty"
                 } else {
                     "everyone completed the challenge! Awesome job to start a new day!"
                 })
@@ -376,7 +376,7 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
         let data = get_guild_from_id!(state, guild_id);
         let thread = get_thread_from_guild!(data);
         let channel = get_channel_from_guild!(data);
-        let code_block = Regex::new(r"(?s)\|\|```.+```\|\|")?;
+        let code_block = Regex::new(r"(?s)```.+```")?;
         let mut message = MessageBuilder::new();
         if msg.content.starts_with("/active") {
             let args = msg.content.split(' ').collect::<Vec<&str>>();
@@ -490,7 +490,7 @@ pub async fn respond(ctx: Context, msg: Message, bot: UserId) -> Result<(), Box<
                 message
             .push("Congrats to ")
             .mention(get_user_from_id!(state.guilds, guild_id, user_id))
-            .push(format!(" for completing today's challenge! You have gained {score} points today your current score is {}\n", user.score));
+            .push(format!(" for completing today's challenge! You have gained {score} points today, your current score is {}\n", user.score));
                 let users_not_yet_completed = data
                     .users
                     .iter()
