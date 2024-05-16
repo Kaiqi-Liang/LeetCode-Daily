@@ -1,5 +1,31 @@
 # LeetCode Daily
 
+## Introduction
+Hi I'm LeetCode Daily, here to motivate you to do LeetCode questions every single day 🤓
+
+I operate on a default channel and I create a thread in that channel every time a new daily question comes out
+
+The default channel for @LeetCode Daily is #[channel_name] and today's thread is #[⁠mm/dd/yyyy]
+You can change it by using the following command
+
+```
+/channel channel_id
+```
+
+Some other commands you can run are
+* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel
+* `/help`: Shows this help message, can be run anywhere
+* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread
+* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off
+
+To submit your code you have to put it a spoiler tag and wrap it with \```code\``` so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again
+
+```
+||```language
+code
+```||
+```
+
 ## Setup Instructions
 
 Add the discord bot to your server via this [invite link](https://discord.com/oauth2/authorize?client_id=1235892312463245322&permissions=8&scope=bot).
