@@ -368,7 +368,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                 get_user_from_id!(data.users, *user_id).score += votes;
                 message
                     .mention(get_user_from_id!(state.guilds, guild_id, user_id))
-                    .push(format!(": {votes}\n"));
+                    .push(format!(": {votes}"));
             }
             data.thread_id = create_thread!(ctx, data, Utc::now().format("%d/%m/%Y").to_string());
             send_message_with_leaderboard!(
@@ -377,7 +377,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                 guild_id,
                 get_thread_from_guild!(data),
                 &data.users,
-                construct_daily_message!(message).push("\n\n")
+                construct_daily_message!(message.push('\n')).push("\n\n")
             );
         }
         write_to_database!(state);
@@ -434,7 +434,6 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
         let state = get_shared_state!(data);
         let user_id = &msg.author.id;
         let data = get_guild_from_id!(state, guild_id);
-        let thread = get_thread_from_guild!(data);
         let channel = get_channel_from_guild!(data);
         let code_block = Regex::new(r"(?s)```.+```")?;
         let mut message = MessageBuilder::new();
@@ -461,6 +460,17 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                 None
                             }
                         }
+                        2 => {
+                            if args[0] != "/active" || args[1] != "weekly" || args[1] != "daily" {
+                                None
+                            } else {
+                                Some(
+                                    message
+                                        .mention(&bot)
+                                        .push(format!(" is active for {}", args[1])),
+                                )
+                            }
+                        }
                         3 => {
                             if args[0] != "/active" && args[2] != "toggle" {
                                 None
@@ -471,6 +481,21 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                     &mut data.active_daily
                                 };
                                 *active = !*active;
+                                if args[1] == "daily" && *active && data.thread_id.is_none() {
+                                    data.thread_id = create_thread!(
+                                        ctx,
+                                        data,
+                                        Utc::now().format("%d/%m/%Y").to_string()
+                                    );
+                                    send_message_with_leaderboard!(
+                                        ctx,
+                                        &state.guilds,
+                                        guild_id,
+                                        get_thread_from_guild!(data),
+                                        &data.users,
+                                        construct_daily_message!(message.push('\n')).push("\n\n")
+                                    );
+                                }
                                 Some(message.mention(&bot).push(format!(
                                     " is now {} for {}",
                                     if *active { "active" } else { "paused" },
@@ -491,149 +516,147 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                     .build(),
                 )
                 .await?;
-        } else if msg.content == "/help" {
-            send_help_message!(ctx, message, bot, msg.channel_id, channel, thread);
-        } else if msg.content.starts_with("/channel") {
-            let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
-            if let Ok(channel_id) = channel_id.parse::<u64>() {
-                let channel_id = ChannelId::new(channel_id);
-                if let Ok(Channel::Guild(channel)) = channel_id.to_channel(&ctx.http).await {
-                    if channel.kind != ChannelType::Text {
+        } else if let Some(thread) = data.thread_id {
+            if msg.content == "/help" {
+                send_help_message!(ctx, message, bot, msg.channel_id, channel, thread);
+            } else if msg.content.starts_with("/channel") {
+                let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
+                if let Ok(channel_id) = channel_id.parse::<u64>() {
+                    let channel_id = ChannelId::new(channel_id);
+                    if let Ok(Channel::Guild(channel)) = channel_id.to_channel(&ctx.http).await {
+                        if channel.kind != ChannelType::Text {
+                            send_invalid_channel_id_message!(ctx, msg);
+                        } else {
+                            message
+                                .push("Successfully set channel to be ")
+                                .channel(channel_id);
+                            msg.channel_id.say(&ctx.http, message.build()).await?;
+                            data.channel_id = Some(channel_id);
+                        }
+                    } else {
                         send_invalid_channel_id_message!(ctx, msg);
-                    } else {
-                        message
-                            .push("Successfully set channel to be ")
-                            .channel(channel_id);
-                        msg.channel_id.say(&ctx.http, message.build()).await?;
-                        data.channel_id = Some(channel_id);
                     }
-                } else {
-                    send_invalid_channel_id_message!(ctx, msg);
-                }
-            } else if msg.channel_id != channel && msg.channel_id != thread {
-                msg.channel_id
-                    .say(
-                        &ctx.http,
-                        construct_channel_message!(
-                            message,
-                            bot,
-                            channel,
-                            get_thread_from_guild!(data)
+                } else if msg.channel_id != channel && msg.channel_id != thread {
+                    msg.channel_id
+                        .say(
+                            &ctx.http,
+                            construct_channel_message!(message, bot, channel, thread).build(),
                         )
-                        .build(),
-                    )
-                    .await?;
-            } else {
-                send_channel_usage_message!(ctx, msg.channel_id);
-            }
-        } else if msg.content == "/scores"
-            && (msg.channel_id == thread
-                || msg.channel_id == channel
-                || msg.channel_id == data.weekly_id.unwrap_or_default())
-        {
-            send_message_with_leaderboard!(
-                ctx,
-                &state.guilds,
-                guild_id,
-                msg.channel_id,
-                &data.users,
-                message
-            );
-        } else if !data.active_daily && !data.active_weekly {
-        } else if channel == msg.channel_id {
-            message.push("Please send your ");
-            if channel == msg.channel_id {
-                if msg.content == "/poll" {
-                    if !data.active_daily {
-                        return Ok(());
-                    }
-                    message.push("command in today's ").channel(thread);
-                } else if code_block.is_match(&msg.content) {
-                    if data.active_daily {
-                        message
-                            .push("code in today's daily thread ")
-                            .channel(thread);
-                        if data.active_weekly {
-                            if let Some(weekly) = data.weekly_id {
-                                message
-                                    .push("or this week's weekly thread ")
-                                    .channel(weekly);
-                            }
-                        }
-                    } else if let Some(weekly) = data.weekly_id {
-                        message
-                            .push("code in this week's weekly thread ")
-                            .channel(weekly);
-                    }
+                        .await?;
                 } else {
-                    return Ok(());
+                    send_channel_usage_message!(ctx, msg.channel_id);
                 }
-                channel.say(&ctx.http, message.build()).await?;
-            }
-        } else if code_block.is_match(&msg.content) {
-            if data.active_daily && msg.channel_id == thread {
-                let user = get_user_from_id!(data.users, *user_id);
-                if user.submitted.is_some() {
-                    message.push("You have already submitted today");
-                } else {
-                    user.submitted = Some(msg.link());
-                    let score: usize =
-                        (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
-                    user.score += score;
-                    message
-            .push("Congrats to ")
-            .mention(get_user_from_id!(state.guilds, guild_id, user_id))
-            .push(format!(" for completing today's challenge! You have gained {score} points today, your current score is {}\n", user.score));
-                    let users_not_yet_completed = data
-                        .users
-                        .iter()
-                        .filter_map(|(id, user)| {
-                            if user.submitted.is_some() {
-                                None
-                            } else {
-                                Some(get_user_from_id!(state.guilds, guild_id, id))
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    if let Some(poll_id) = data.poll_id {
-                        msg.channel_id
-                            .edit_message(
-                                &ctx.http,
-                                poll_id,
-                                EditMessage::new().content(build_submission_message(
-                                    data,
-                                    &state.guilds,
-                                    guild_id,
-                                )),
-                            )
-                            .await?;
-                    }
-                    if users_not_yet_completed.is_empty() {
-                        message
-                            .push("Everyone has finished today's challenge, let's Grow Together!");
-                    } else {
-                        message.push("Still waiting for ");
-                        for user in users_not_yet_completed {
-                            message.mention(user);
-                        }
-                    }
-                }
+            } else if msg.content == "/scores"
+                && (msg.channel_id == thread
+                    || msg.channel_id == channel
+                    || msg.channel_id == data.weekly_id.unwrap_or_default())
+            {
                 send_message_with_leaderboard!(
                     ctx,
                     &state.guilds,
                     guild_id,
-                    thread,
+                    msg.channel_id,
                     &data.users,
-                    message.push("\n\n")
+                    message
                 );
+            } else if !data.active_daily && !data.active_weekly {
+            } else if channel == msg.channel_id {
+                message.push("Please send your ");
+                if channel == msg.channel_id {
+                    if msg.content == "/poll" {
+                        if !data.active_daily {
+                            return Ok(());
+                        }
+                        message.push("command in today's ").channel(thread);
+                    } else if code_block.is_match(&msg.content) {
+                        if data.active_daily {
+                            message
+                                .push("code in today's daily thread ")
+                                .channel(thread);
+                            if data.active_weekly {
+                                if let Some(weekly) = data.weekly_id {
+                                    message
+                                        .push("or this week's weekly thread ")
+                                        .channel(weekly);
+                                }
+                            }
+                        } else if let Some(weekly) = data.weekly_id {
+                            message
+                                .push("code in this week's weekly thread ")
+                                .channel(weekly);
+                        }
+                    } else {
+                        return Ok(());
+                    }
+                    channel.say(&ctx.http, message.build()).await?;
+                }
+            } else if code_block.is_match(&msg.content) {
+                if data.active_daily && msg.channel_id == thread {
+                    let user = get_user_from_id!(data.users, *user_id);
+                    if user.submitted.is_some() {
+                        message.push("You have already submitted today");
+                    } else {
+                        user.submitted = Some(msg.link());
+                        let score: usize =
+                            (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
+                        user.score += score;
+                        message
+                        .push("Congrats to ")
+                        .mention(get_user_from_id!(state.guilds, guild_id, user_id))
+                        .push(format!(" for completing today's challenge! You have gained {score} points today, your current score is {}\n", user.score));
+                        let users_not_yet_completed = data
+                            .users
+                            .iter()
+                            .filter_map(|(id, user)| {
+                                if user.submitted.is_some() {
+                                    None
+                                } else {
+                                    Some(get_user_from_id!(state.guilds, guild_id, id))
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        if let Some(poll_id) = data.poll_id {
+                            msg.channel_id
+                                .edit_message(
+                                    &ctx.http,
+                                    poll_id,
+                                    EditMessage::new().content(build_submission_message(
+                                        data,
+                                        &state.guilds,
+                                        guild_id,
+                                    )),
+                                )
+                                .await?;
+                        }
+                        if users_not_yet_completed.is_empty() {
+                            message.push(
+                                "Everyone has finished today's challenge, let's Grow Together!",
+                            );
+                        } else {
+                            message.push("Still waiting for ");
+                            for user in users_not_yet_completed {
+                                message.mention(user);
+                            }
+                        }
+                    }
+                    send_message_with_leaderboard!(
+                        ctx,
+                        &state.guilds,
+                        guild_id,
+                        thread,
+                        &data.users,
+                        message.push("\n\n")
+                    );
+                    data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
+                } else if data.active_weekly && msg.channel_id == data.weekly_id.unwrap_or_default()
+                {
+                    let user = get_user_from_id!(data.users, *user_id);
+                    // TODO keep track of how many questions they have done, if it's the first one to finish 4 get more points
+                    user.score += 1;
+                }
+            } else if msg.content == "/poll" && msg.channel_id == thread && data.active_daily {
                 data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
-            } else if data.active_weekly && msg.channel_id == data.weekly_id.unwrap_or_default() {
-                let user = get_user_from_id!(data.users, *user_id);
-                // TODO keep track of how many questions they have done, if it's the first one to finish 4 get more points
-                user.score += 1;
             }
-        } else if msg.content == "/poll" && msg.channel_id == thread && data.active_daily {
-            data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
         }
     } else {
         msg.channel_id
@@ -790,26 +813,19 @@ pub async fn initialise_guild(
                 data.channel_id = Some(channel.id);
                 let guild_id = &guild.id;
                 let mut message = MessageBuilder::new();
-                send_help_message!(
-                    ctx,
-                    MessageBuilder::new(),
-                    bot,
-                    channel,
-                    channel.id,
-                    get_thread_from_guild!(data)
-                );
-                construct_daily_message!(message.push("\n"));
                 data.thread_id =
                     create_thread!(ctx, data, Utc::now().format("%d/%m/%Y").to_string());
+                let thread = get_thread_from_guild!(data);
+                send_help_message!(ctx, MessageBuilder::new(), bot, channel, channel.id, thread);
                 state.database.insert(*guild_id, data);
                 initialise_guilds(ctx, guild_id, state).await?;
                 send_message_with_leaderboard!(
                     ctx,
                     &state.guilds,
                     guild_id,
-                    channel,
+                    thread,
                     &get_guild_from_id!(state, guild_id).users,
-                    message.push("\n\n")
+                    construct_daily_message!(message.push('\n')).push("\n\n")
                 );
                 return Ok(());
             }
