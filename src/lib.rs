@@ -40,6 +40,7 @@ pub struct Data {
 struct Status {
     voted_for: Option<UserId>,
     submitted: Option<String>,
+    weekly_submissions: usize,
     score: usize,
 }
 
@@ -119,6 +120,15 @@ macro_rules! construct_daily_message {
             .push("\nShare your code in the format below to confirm your completion of today's ")
             .push_named_link("LeetCode", "https://leetcode.com/problemset")
             .push(" Daily @everyone\n"))
+    };
+}
+
+macro_rules! construct_congrats_message {
+    ($message:expr, $state:ident, $guild_id:ident, $user_id:ident) => {
+        $message
+            .push("Congrats to ")
+            .mention(get_user_from_id!($state.guilds, $guild_id, $user_id))
+            .push(" for ")
     };
 }
 
@@ -416,14 +426,20 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
             if data.active_weekly {
                 data.weekly_id = create_thread!(ctx, data, format!("{:?}", Utc::now().iso_week()));
             }
+            for user in data.users.values_mut() {
+                user.weekly_submissions = 0;
+            }
         }
 
         sleep(Duration::from_secs(
             chrono::Duration::minutes(60).num_seconds().try_into()?,
         ))
         .await;
-        for guild in state.database.values_mut() {
-            guild.weekly_id = None;
+        for data in state.database.values_mut() {
+            data.weekly_id = None;
+            for user in data.users.values_mut() {
+                user.weekly_submissions = 0;
+            }
         }
     }
 }
@@ -600,10 +616,8 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         let score: usize =
                             (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
                         user.score += score;
-                        message
-                        .push("Congrats to ")
-                        .mention(get_user_from_id!(state.guilds, guild_id, user_id))
-                        .push(format!(" for completing today's challenge! You have gained {score} points today, your current score is {}\n", user.score));
+                        construct_congrats_message!(message, state, guild_id, user_id)
+                            .push(format!("completing today's challenge! You have gained {score} points, your current score is {}\n", user.score));
                         let users_not_yet_completed = data
                             .users
                             .iter()
@@ -650,9 +664,46 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                     data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
                 } else if data.active_weekly && msg.channel_id == data.weekly_id.unwrap_or_default()
                 {
+                    let (reward, place) = match data
+                        .users
+                        .values()
+                        .filter(|user| user.weekly_submissions == 4)
+                        .count()
+                    {
+                        1 => (4, "first"),
+                        2 => (3, "second"),
+                        3 => (2, "third"),
+                        _ => (1, "after top 3"),
+                    };
                     let user = get_user_from_id!(data.users, *user_id);
-                    // TODO keep track of how many questions they have done, if it's the first one to finish 4 get more points
-                    user.score += 1;
+                    if user.weekly_submissions < 4 {
+                        user.weekly_submissions += 1;
+                        user.score += if user.weekly_submissions == 4 {
+                            construct_congrats_message!(message, state, guild_id, user_id).push(
+                                format!(
+                                    "coming {} in the contest, you have been rewarded {} points",
+                                    place, reward
+                                ),
+                            );
+                            reward
+                        } else {
+                            construct_congrats_message!(message, state, guild_id, user_id)
+                                .push("finishing one question in the contest, you just received 1 point for your weekly contest submission");
+                            1
+                        };
+                        send_message_with_leaderboard!(
+                            ctx,
+                            &state.guilds,
+                            guild_id,
+                            thread,
+                            &data.users,
+                            message.push("\n\n")
+                        );
+                    } else {
+                        thread
+                            .say(&ctx.http, "You have already completed the contest")
+                            .await?;
+                    }
                 }
             } else if msg.content == "/poll" && msg.channel_id == thread && data.active_daily {
                 data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
@@ -795,6 +846,7 @@ pub async fn initialise_guild(
                             Status {
                                 voted_for: None,
                                 submitted: None,
+                                weekly_submissions: 0,
                                 score: 0,
                             },
                         ))
