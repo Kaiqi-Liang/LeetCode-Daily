@@ -333,9 +333,8 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
             }
         }
 
-        println!("Scheduled for next daily in {duration} seconds");
         sleep(Duration::from_secs(duration)).await;
-        println!("It is now {:?}", Utc::now());
+        println!("Daily starting now {:?}", Utc::now());
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
         for (guild_id, data) in state.database.iter_mut() {
@@ -378,7 +377,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                 get_user_from_id!(data.users, *user_id).score += votes;
                 message
                     .mention(get_user_from_id!(state.guilds, guild_id, user_id))
-                    .push(format!(": {votes}"));
+                    .push(format!(": {votes}\n"));
             }
             data.thread_id = create_thread!(ctx, data, Utc::now().format("%d/%m/%Y").to_string());
             send_message_with_leaderboard!(
@@ -406,6 +405,7 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
                     .time(),
             )
             .num_seconds();
+        println!("{num_days_from_sunday} days until next contest");
         sleep(Duration::from_secs(
             (if num_days_from_sunday == 0 {
                 if same_day_until_contest_start.is_positive() {
@@ -419,6 +419,7 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
                 .try_into()?,
         ))
         .await;
+        println!("Weekly startin now {:?}", Utc::now());
 
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
