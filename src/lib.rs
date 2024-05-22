@@ -25,7 +25,7 @@ type Users = HashMap<UserId, User>;
 type Database = HashMap<GuildId, Data>;
 type UserInfo = HashMap<UserId, Status>;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Data {
     users: UserInfo,
     channel_id: Option<ChannelId>,
@@ -36,7 +36,7 @@ pub struct Data {
     active_daily: bool,
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Clone)]
 struct Status {
     voted_for: Option<UserId>,
     submitted: Option<String>,
@@ -97,7 +97,7 @@ macro_rules! send_help_message {
         .push("\nTo submit your code you have to put it a spoiler tag and wrap it with ")
         .push_safe("```code```")
         .push(" so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again\n")
-        ).build()).await?;
+        ).build()).await?
     };
 }
 
@@ -114,12 +114,22 @@ macro_rules! construct_format_message {
     };
 }
 
-macro_rules! construct_daily_message {
-    ($message:expr) => {
-        construct_format_message!($message
-            .push("\nShare your code in the format below to confirm your completion of today's ")
-            .push_named_link("LeetCode", "https://leetcode.com/problemset")
-            .push(" Daily @everyone\n"))
+macro_rules! send_daily_message_with_leaderboard {
+    ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr) => {
+        send_message_with_leaderboard!(
+            $ctx,
+            &$state.guilds,
+            $guild_id,
+            get_thread_from_guild!($data),
+            &$data.users,
+            construct_format_message!($message
+                .push(
+                    "\nShare your code in the format below to confirm your completion of today's "
+                )
+                .push_named_link("LeetCode", "https://leetcode.com/problemset")
+                .push(" Daily @everyone\n"))
+            .push("\n\n")
+        );
     };
 }
 
@@ -132,17 +142,29 @@ macro_rules! construct_congrats_message {
     };
 }
 
+macro_rules! construct_thread_message {
+    ($message:expr, $thread:expr) => {
+        if let Some(thread_id) = $thread {
+            $message.push("Today's thread is ").channel(thread_id)
+        } else {
+            $message.push("Daily is not active")
+        }
+        .push('\n')
+    };
+}
+
 macro_rules! construct_channel_message {
     ($message:expr, $bot:ident, $channel:expr, $thread:expr) => {
-        $message
-            .push("The default channel for ")
-            .mention(&$bot)
-            .push(" is ")
-            .channel($channel)
-            .push(" and today's thread is ")
-            .channel($thread)
-            .push("\nYou can change it by using the following command")
-            .push_codeblock("/channel channel_id", None)
+        construct_thread_message!(
+            $message
+                .push("The default channel for ")
+                .mention(&$bot)
+                .push(" is ")
+                .channel($channel)
+                .push("\nYou can change it by using the following command")
+                .push_codeblock("/channel channel_id", None),
+            $thread
+        )
     };
 }
 
@@ -338,10 +360,11 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
         for (guild_id, data) in state.database.iter_mut() {
+            data.poll_id = None;
+            data.thread_id = None;
             if !data.active_daily {
                 continue;
             }
-            data.poll_id = None;
             let mut message = MessageBuilder::new();
             message.push("Yesterday ");
             let mut penalties = false;
@@ -380,14 +403,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                     .push(format!(": {votes}\n"));
             }
             data.thread_id = create_thread!(ctx, data, Utc::now().format("%d/%m/%Y").to_string());
-            send_message_with_leaderboard!(
-                ctx,
-                &state.guilds,
-                guild_id,
-                get_thread_from_guild!(data),
-                &data.users,
-                construct_daily_message!(message.push('\n')).push("\n\n")
-            );
+            send_daily_message_with_leaderboard!(ctx, state, guild_id, data, message);
         }
         write_to_database!(state);
     }
@@ -504,13 +520,12 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                         data,
                                         Utc::now().format("%d/%m/%Y").to_string()
                                     );
-                                    send_message_with_leaderboard!(
+                                    send_daily_message_with_leaderboard!(
                                         ctx,
-                                        &state.guilds,
+                                        state,
                                         guild_id,
-                                        get_thread_from_guild!(data),
-                                        &data.users,
-                                        construct_daily_message!(message.push('\n')).push("\n\n")
+                                        data,
+                                        MessageBuilder::new()
                                     );
                                 }
                                 Some(message.mention(&bot).push(format!(
@@ -533,10 +548,10 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                     .build(),
                 )
                 .await?;
+        } else if msg.content == "/help" {
+            send_help_message!(ctx, message, bot, msg.channel_id, channel, data.thread_id);
         } else if let Some(thread) = data.thread_id {
-            if msg.content == "/help" {
-                send_help_message!(ctx, message, bot, msg.channel_id, channel, thread);
-            } else if msg.content.starts_with("/channel") {
+            if msg.content.starts_with("/channel") {
                 let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
                 if let Ok(channel_id) = channel_id.parse::<u64>() {
                     let channel_id = ChannelId::new(channel_id);
@@ -557,7 +572,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                     msg.channel_id
                         .say(
                             &ctx.http,
-                            construct_channel_message!(message, bot, channel, thread).build(),
+                            construct_channel_message!(message, bot, channel, Some(thread)).build(),
                         )
                         .await?;
                 } else {
@@ -865,20 +880,18 @@ pub async fn initialise_guild(
             if channel.kind == ChannelType::Text {
                 data.channel_id = Some(channel.id);
                 let guild_id = &guild.id;
-                let mut message = MessageBuilder::new();
                 data.thread_id =
                     create_thread!(ctx, data, Utc::now().format("%d/%m/%Y").to_string());
-                let thread = get_thread_from_guild!(data);
-                send_help_message!(ctx, MessageBuilder::new(), bot, channel, channel.id, thread);
-                state.database.insert(*guild_id, data);
+                state.database.insert(*guild_id, data.clone());
                 initialise_guilds(ctx, guild_id, state).await?;
-                send_message_with_leaderboard!(
+                let mut message = MessageBuilder::new();
+                send_help_message!(ctx, message, bot, channel, channel.id, data.thread_id);
+                send_daily_message_with_leaderboard!(
                     ctx,
-                    &state.guilds,
+                    state,
                     guild_id,
-                    thread,
-                    &get_guild_from_id!(state, guild_id).users,
-                    construct_daily_message!(message.push('\n')).push("\n\n")
+                    data,
+                    MessageBuilder::new().push('\n')
                 );
                 return Ok(());
             }
