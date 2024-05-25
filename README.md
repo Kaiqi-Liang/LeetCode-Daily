@@ -3,10 +3,9 @@
 ## Introduction
 Hi I'm LeetCode Daily, here to motivate you to do LeetCode questions every single day 🤓
 
-I operate on a default channel and I create a thread in that channel every time a new daily question comes out
+I operate on a default channel and I create a thread in that channel when a new daily question comes out
 
-The default channel for @LeetCode Daily is #[channel_name] and today's thread is #[⁠mm/dd/yyyy]
-You can change it by using the following command
+You can change it by running the following command
 
 ```
 /channel channel_id

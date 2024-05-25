@@ -87,7 +87,7 @@ macro_rules! send_help_message {
             $message
                 .push("Hi I'm LeetCode Daily, here to motivate you to do ")
                 .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                .push(" questions every single day 🤓\n\nI operate on a default channel and I create a thread in that channel every time a new daily question comes out\n"),
+                .push(" questions every single day 🤓\n\nI operate on a default channel and I create a thread in that channel when a new daily question comes out\n"),
             $bot,
             $default_channel,
             $thread
@@ -452,7 +452,7 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
                             .push(
                                 "Weekly contest starting now!\nShare your code in the format below to submit your solutions\n"
                             ))
-                        .push("\n\nThe first 3 to finish all 4 questions will get bonus points")
+                        .push("\n\nThe first 3 to finish all 4 questions will get bonus points @everyone")
                     );
                 }
                 for user in data.users.values_mut() {
