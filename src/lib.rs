@@ -94,7 +94,7 @@ macro_rules! send_help_message {
         )
         .push("\nSome other commands you can run are")
         .push("\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/help`: Shows this help message, can be run anywhere\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off\n")
-        .push("\nTo submit your code you have to put it a spoiler tag and wrap it with ")
+        .push("\nTo submit your code you have to put it in a spoiler tag and wrap it with ")
         .push_safe("```code```")
         .push(" so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again\n")
         ).build()).await?
@@ -280,8 +280,15 @@ fn construct_leaderboard<'a>(
         .map(|(id, user)| (get_user_from_id!(guilds, guild_id, id), user.score))
         .collect::<Vec<_>>();
     leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut has_score = false;
     for (user, score) in leaderboard {
-        message.push(format!("{}: {score}\n", user.name));
+        if score > 0 {
+            has_score = true;
+            message.push(format!("{}: {score}\n", user.name));
+        }
+    }
+    if !has_score {
+        message.push("No one has any points yet");
     }
     message
 }
@@ -367,7 +374,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
             }
             let mut message = MessageBuilder::new();
             message.push("Yesterday ");
-            let mut penalties = false;
+            let mut penalties = 0;
             let mut votes = HashMap::new();
             for (user_id, user) in data.users.iter_mut() {
                 if let Some(voted_for) = user.voted_for {
@@ -377,8 +384,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                         .or_insert(1);
                 }
                 if user.submitted.is_none() {
-                    penalties = true;
-                    message.mention(get_user_from_id!(state.guilds, guild_id, user_id));
+                    penalties += 1;
                     if user.score > 0 {
                         user.score -= 1;
                     }
@@ -388,19 +394,22 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                 user.voted_for = None;
             }
             message
-                .push(if penalties {
-                    " did not complete the challenge 😭 each lost 1 point as a penalty"
+                .push(if penalties > 0 {
+                    format!("{penalties} people did not complete the challenge 😭 each lost 1 point as a penalty")
                 } else {
-                    "everyone completed the challenge! Awesome job to start a new day!"
+                    "everyone completed the challenge! Awesome job to start a new day!".to_string()
                 })
                 .push("\nThe number of votes received:\n");
             let mut votes = votes.iter().collect::<Vec<_>>();
             votes.sort_by(|a, b| a.1.cmp(b.1));
-            for (user_id, votes) in votes {
-                get_user_from_id!(data.users, *user_id).score += votes;
+            for (user_id, &votes) in votes.iter() {
+                get_user_from_id!(data.users, **user_id).score += votes;
                 message
                     .mention(get_user_from_id!(state.guilds, guild_id, user_id))
                     .push(format!(": {votes}\n"));
+            }
+            if votes.is_empty() {
+                message.push("There are no votes");
             }
             data.thread_id = create_thread!(ctx, data, Utc::now().format("%d/%m/%Y").to_string());
             send_daily_message_with_leaderboard!(ctx, state, guild_id, data, message);
@@ -649,7 +658,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                             (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
                         user.score += score;
                         construct_congrats_message!(message, state, guild_id, user_id)
-                            .push(format!("completing today's challenge! You have gained {score} points, your current score is {}\n", user.score));
+                            .push(format!("completing today's challenge! You have gained {score} points, your current score is {}", user.score));
                         let users_not_yet_completed = data
                             .users
                             .iter()
@@ -678,11 +687,6 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                             message.push(
                                 "Everyone has finished today's challenge, let's Grow Together!",
                             );
-                        } else {
-                            message.push("Still waiting for ");
-                            for user in users_not_yet_completed {
-                                message.mention(user);
-                            }
                         }
                     }
                     send_message_with_leaderboard!(
