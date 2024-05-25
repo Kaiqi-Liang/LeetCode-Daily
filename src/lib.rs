@@ -435,29 +435,45 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
                 .try_into()?,
         ))
         .await;
-        println!("Weekly startin now {:?}", Utc::now());
-
-        let mut data = ctx.data.write().await;
-        let state = get_shared_state!(data);
-        for data in state.database.values_mut() {
-            if data.active_weekly {
-                data.weekly_id = create_thread!(ctx, data, format!("{:?}", Utc::now().iso_week()));
+        {
+            let mut data = ctx.data.write().await;
+            let state = get_shared_state!(data);
+            for (guild_id, data) in state.database.iter_mut() {
+                if data.active_weekly {
+                    data.weekly_id =
+                        create_thread!(ctx, data, format!("{:?}", Utc::now().iso_week()));
+                    send_message_with_leaderboard!(
+                        ctx,
+                        &state.guilds,
+                        guild_id,
+                        data.weekly_id.ok_or("Failed to create thread")?,
+                        &data.users,
+                        construct_format_message!(MessageBuilder::new()
+                            .push(
+                                "Weekly contest starting now!\nShare your code in the format below to submit your solutions\n"
+                            ))
+                        .push("\n\nThe first 3 to finish all 4 questions will get bonus points")
+                    );
+                }
+                for user in data.users.values_mut() {
+                    user.weekly_submissions = 0;
+                }
             }
-            for user in data.users.values_mut() {
-                user.weekly_submissions = 0;
-            }
+            write_to_database!(state);
         }
-
         sleep(Duration::from_secs(
             chrono::Duration::minutes(60).num_seconds().try_into()?,
         ))
         .await;
+        let mut data = ctx.data.write().await;
+        let state = get_shared_state!(data);
         for data in state.database.values_mut() {
             data.weekly_id = None;
             for user in data.users.values_mut() {
                 user.weekly_submissions = 0;
             }
         }
+        write_to_database!(state);
     }
 }
 
@@ -550,6 +566,19 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 .await?;
         } else if msg.content == "/help" {
             send_help_message!(ctx, message, bot, msg.channel_id, channel, data.thread_id);
+        } else if msg.content == "/scores"
+            && (msg.channel_id == channel
+                || msg.channel_id == data.thread_id.unwrap_or_default()
+                || msg.channel_id == data.weekly_id.unwrap_or_default())
+        {
+            send_message_with_leaderboard!(
+                ctx,
+                &state.guilds,
+                guild_id,
+                msg.channel_id,
+                &data.users,
+                message
+            );
         } else if let Some(thread) = data.thread_id {
             if msg.content.starts_with("/channel") {
                 let channel_id = msg.content.split(' ').last().ok_or("Empty message")?;
@@ -578,19 +607,6 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 } else {
                     send_channel_usage_message!(ctx, msg.channel_id);
                 }
-            } else if msg.content == "/scores"
-                && (msg.channel_id == thread
-                    || msg.channel_id == channel
-                    || msg.channel_id == data.weekly_id.unwrap_or_default())
-            {
-                send_message_with_leaderboard!(
-                    ctx,
-                    &state.guilds,
-                    guild_id,
-                    msg.channel_id,
-                    &data.users,
-                    message
-                );
             } else if !data.active_daily && !data.active_weekly {
             } else if channel == msg.channel_id {
                 message.push("Please send your ");
@@ -678,47 +694,50 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         message.push("\n\n")
                     );
                     data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
-                } else if data.active_weekly && msg.channel_id == data.weekly_id.unwrap_or_default()
-                {
-                    let (reward, place) = match data
-                        .users
-                        .values()
-                        .filter(|user| user.weekly_submissions == 4)
-                        .count()
+                } else if data.active_weekly {
+                    if let Some(weekly_id) = data
+                        .weekly_id
+                        .filter(|&weekly_id| weekly_id == msg.channel_id)
                     {
-                        1 => (4, "first"),
-                        2 => (3, "second"),
-                        3 => (2, "third"),
-                        _ => (1, "after top 3"),
-                    };
-                    let user = get_user_from_id!(data.users, *user_id);
-                    if user.weekly_submissions < 4 {
-                        user.weekly_submissions += 1;
-                        user.score += if user.weekly_submissions == 4 {
-                            construct_congrats_message!(message, state, guild_id, user_id).push(
-                                format!(
+                        let (reward, place) = match data
+                            .users
+                            .values()
+                            .filter(|user| user.weekly_submissions == 4)
+                            .count()
+                        {
+                            0 => (4, "first"),
+                            1 => (3, "second"),
+                            2 => (2, "third"),
+                            _ => (1, "after top 3"),
+                        };
+                        let user = get_user_from_id!(data.users, *user_id);
+                        if user.weekly_submissions < 4 {
+                            user.weekly_submissions += 1;
+                            user.score += if user.weekly_submissions == 4 {
+                                construct_congrats_message!(message, state, guild_id, user_id)
+                                    .push(format!(
                                     "coming {} in the contest, you have been rewarded {} points",
                                     place, reward
-                                ),
-                            );
-                            reward
-                        } else {
-                            construct_congrats_message!(message, state, guild_id, user_id)
+                                ));
+                                reward
+                            } else {
+                                construct_congrats_message!(message, state, guild_id, user_id)
                                 .push("finishing one question in the contest, you just received 1 point for your weekly contest submission");
-                            1
-                        };
-                        send_message_with_leaderboard!(
-                            ctx,
-                            &state.guilds,
-                            guild_id,
-                            thread,
-                            &data.users,
-                            message.push("\n\n")
-                        );
-                    } else {
-                        thread
-                            .say(&ctx.http, "You have already completed the contest")
-                            .await?;
+                                1
+                            };
+                            send_message_with_leaderboard!(
+                                ctx,
+                                &state.guilds,
+                                guild_id,
+                                weekly_id,
+                                &data.users,
+                                message.push("\n\n")
+                            );
+                        } else {
+                            weekly_id
+                                .say(&ctx.http, "You have already completed the contest")
+                                .await?;
+                        }
                     }
                 }
             } else if msg.content == "/poll" && msg.channel_id == thread && data.active_daily {
