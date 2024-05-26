@@ -1,4 +1,6 @@
+mod leetcode;
 use chrono::{Datelike, TimeDelta, TimeZone, Utc, Weekday};
+use leetcode::construct_leetcode_daily_question_message;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -122,10 +124,9 @@ macro_rules! send_daily_message_with_leaderboard {
             $guild_id,
             get_thread_from_guild!($data),
             &$data.users,
-            construct_format_message!($message
-                .push(
-                    "\nShare your code in the format below to confirm your completion of today's "
-                )
+            construct_format_message!(construct_leetcode_daily_question_message($message)
+                .await
+                .push("Share your code in the format below to confirm your completion of today's ")
                 .push_named_link("LeetCode", "https://leetcode.com/problemset")
                 .push(" Daily @everyone\n"))
             .push("\n\n")
@@ -376,7 +377,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
             message.push("Yesterday ");
             let mut penalties = 0;
             let mut votes = HashMap::new();
-            for (user_id, user) in data.users.iter_mut() {
+            for user in data.users.values_mut() {
                 if let Some(voted_for) = user.voted_for {
                     votes
                         .entry(voted_for)
@@ -399,7 +400,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                 } else {
                     "everyone completed the challenge! Awesome job to start a new day!".to_string()
                 })
-                .push("\nThe number of votes received:\n");
+                .push("\n\nThe number of votes received:\n");
             let mut votes = votes.iter().collect::<Vec<_>>();
             votes.sort_by(|a, b| a.1.cmp(b.1));
             for (user_id, &votes) in votes.iter() {
@@ -409,10 +410,10 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                     .push(format!(": {votes}\n"));
             }
             if votes.is_empty() {
-                message.push("There are no votes");
+                message.push("There are no votes\n");
             }
             data.thread_id = create_thread!(ctx, data, Utc::now().format("%d/%m/%Y").to_string());
-            send_daily_message_with_leaderboard!(ctx, state, guild_id, data, message);
+            send_daily_message_with_leaderboard!(ctx, state, guild_id, data, message.push('\n'));
         }
         write_to_database!(state);
     }
@@ -550,7 +551,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                         state,
                                         guild_id,
                                         data,
-                                        MessageBuilder::new()
+                                        &mut MessageBuilder::new()
                                     );
                                 }
                                 Some(message.mention(&bot).push(format!(
@@ -914,7 +915,7 @@ pub async fn initialise_guild(
                     state,
                     guild_id,
                     data,
-                    MessageBuilder::new().push('\n')
+                    MessageBuilder::new().push("\n\n")
                 );
                 return Ok(());
             }
