@@ -65,7 +65,7 @@ struct GraphQLResponse {
     data: Data,
 }
 
-const URL: &str = "https://leetcode.com/";
+const URL: &str = "https://leetcode.com";
 
 async fn fetch_daily_question() -> Result<GraphQLResponse, reqwest::Error> {
     let query = r#"
@@ -104,7 +104,7 @@ async fn fetch_daily_question() -> Result<GraphQLResponse, reqwest::Error> {
 
     let client = Client::new();
     let response = client
-        .post(format!("{URL}graphql"))
+        .post(format!("{URL}/graphql"))
         .json(&gql_query)
         .header("Content-Type", "application/json")
         .send()
