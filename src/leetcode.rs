@@ -1,7 +1,7 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use serenity::all::MessageBuilder;
+use serenity::all::{EmbedMessageBuilding, MessageBuilder};
 
 #[derive(Serialize)]
 struct GraphQLQuery {
@@ -24,7 +24,6 @@ struct Question {
     difficulty: String,
     #[allow(unused)]
     freq_bar: Option<f64>,
-    #[allow(unused)]
     frontend_question_id: String,
     #[allow(unused)]
     is_favor: bool,
@@ -120,13 +119,15 @@ pub async fn construct_leetcode_daily_question_message(
     match fetch_daily_question().await {
         Ok(res) => {
             let challenge = res.data.active_daily_coding_challenge_question;
-            message.push(format!(
-                "Today's LeetCode Challenge:\n\n**{}**\nLink: {}{}\nDifficulty: {}\nAcceptance Rate: {:.2}%\n\n",
-                challenge.question.title,
-                URL,
-                challenge.link,
+            let title = format!(
+                "{}. {}",
+                challenge.question.frontend_question_id, challenge.question.title
+            );
+            let link = format!("{}{}", URL, challenge.link);
+            message.push_named_link(title, link).push(format!(
+                "\nDifficulty: {}\nAcceptance Rate: {:.2}%\n\n",
                 challenge.question.difficulty,
-                challenge.question.ac_rate.unwrap_or(0.0)
+                challenge.question.ac_rate.unwrap_or_default(),
             ))
         }
         Err(why) => {
