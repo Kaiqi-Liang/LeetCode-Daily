@@ -65,8 +65,9 @@ struct GraphQLResponse {
     data: Data,
 }
 
+const URL: &str = "https://leetcode.com/";
+
 async fn fetch_daily_question() -> Result<GraphQLResponse, reqwest::Error> {
-    let url = "https://leetcode.com/graphql";
     let query = r#"
         query questionOfToday {
             activeDailyCodingChallengeQuestion {
@@ -103,7 +104,7 @@ async fn fetch_daily_question() -> Result<GraphQLResponse, reqwest::Error> {
 
     let client = Client::new();
     let response = client
-        .post(url)
+        .post(format!("{URL}graphql"))
         .json(&gql_query)
         .header("Content-Type", "application/json")
         .send()
@@ -120,12 +121,13 @@ pub async fn construct_leetcode_daily_question_message(
         Ok(res) => {
             let challenge = res.data.active_daily_coding_challenge_question;
             message.push(format!(
-    		    "Today's LeetCode Challenge:\n\n**{}**\nLink: {}\nDifficulty: {}\nAcceptance Rate: {:.2}%\n\n",
-    		    challenge.question.title,
-    		    challenge.link,
-    		    challenge.question.difficulty,
-    		    challenge.question.ac_rate.unwrap_or(0.0)
-    		))
+                "Today's LeetCode Challenge:\n\n**{}**\nLink: {}{}\nDifficulty: {}\nAcceptance Rate: {:.2}%\n\n",
+                challenge.question.title,
+                URL,
+                challenge.link,
+                challenge.question.difficulty,
+                challenge.question.ac_rate.unwrap_or(0.0)
+            ))
         }
         Err(why) => {
             println!("Failed to fetch daily question {why}");
