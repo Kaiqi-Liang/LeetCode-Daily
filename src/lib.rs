@@ -1,6 +1,6 @@
 mod leetcode;
 use chrono::{Datelike, TimeDelta, TimeZone, Utc, Weekday};
-use leetcode::construct_leetcode_daily_question_message;
+use leetcode::send_leetcode_daily_question_message;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -118,19 +118,20 @@ macro_rules! construct_format_message {
 
 macro_rules! send_daily_message_with_leaderboard {
     ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr) => {
+        let thread_id = get_thread_from_guild!($data);
         send_message_with_leaderboard!(
             $ctx,
             &$state.guilds,
             $guild_id,
-            get_thread_from_guild!($data),
+            thread_id,
             &$data.users,
-            construct_format_message!(construct_leetcode_daily_question_message($message)
-                .await
+            construct_format_message!($message
                 .push("Share your code in the format below to confirm your completion of today's ")
                 .push_named_link("LeetCode", "https://leetcode.com/problemset")
                 .push(" Daily @everyone\n"))
             .push("\n\n")
         );
+        send_leetcode_daily_question_message($ctx, thread_id).await;
     };
 }
 
@@ -364,7 +365,6 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
         }
 
         sleep(Duration::from_secs(duration)).await;
-        println!("Daily starting now {:?}", Utc::now());
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
         for (guild_id, data) in state.database.iter_mut() {
@@ -431,8 +431,7 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
                     .time(),
             )
             .num_seconds();
-        println!("{num_days_from_sunday} days until next contest");
-        sleep(Duration::from_secs(
+        let duration = Duration::from_secs(
             (if num_days_from_sunday == 0 {
                 if same_day_until_contest_start.is_positive() {
                     0
@@ -443,8 +442,9 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
                 chrono::Duration::days(num_days_from_sunday).num_seconds()
             } + same_day_until_contest_start)
                 .try_into()?,
-        ))
-        .await;
+        );
+        println!("{num_days_from_sunday} days / {duration:?} until next contest");
+        sleep(duration).await;
         {
             let mut data = ctx.data.write().await;
             let state = get_shared_state!(data);
@@ -690,6 +690,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                             );
                         }
                     }
+                    data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
                     send_message_with_leaderboard!(
                         ctx,
                         &state.guilds,
@@ -698,7 +699,6 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         &data.users,
                         message.push("\n\n")
                     );
-                    data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
                 } else if data.active_weekly {
                     if let Some(weekly_id) = data
                         .weekly_id

@@ -1,7 +1,7 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use serenity::all::{EmbedMessageBuilding, MessageBuilder};
+use serenity::all::{ChannelId, Context, CreateEmbed, CreateMessage};
 
 #[derive(Serialize)]
 struct GraphQLQuery {
@@ -113,9 +113,7 @@ async fn fetch_daily_question() -> Result<GraphQLResponse, reqwest::Error> {
     Ok(gql_response)
 }
 
-pub async fn construct_leetcode_daily_question_message(
-    message: &mut MessageBuilder,
-) -> &mut MessageBuilder {
+pub async fn send_leetcode_daily_question_message(ctx: &Context, thread_id: ChannelId) {
     match fetch_daily_question().await {
         Ok(res) => {
             let challenge = res.data.active_daily_coding_challenge_question;
@@ -123,16 +121,25 @@ pub async fn construct_leetcode_daily_question_message(
                 "{}. {}",
                 challenge.question.frontend_question_id, challenge.question.title
             );
-            let link = format!("{}{}", URL, challenge.link);
-            message.push_named_link(title, link).push(format!(
-                "\nDifficulty: {}\nAcceptance Rate: {:.2}%\n\n",
-                challenge.question.difficulty,
-                challenge.question.ac_rate.unwrap_or_default(),
-            ))
+            let url = format!("{}{}", URL, challenge.link);
+            let embed = CreateEmbed::default()
+                .title(title)
+                .url(url)
+                .field("Difficulty", challenge.question.difficulty, true)
+                .field(
+                    "Acceptance Rate",
+                    format!("{:.2}%", challenge.question.ac_rate.unwrap_or_default()),
+                    true,
+                );
+            if let Err(why) = thread_id
+                .send_message(ctx, CreateMessage::new().embed(embed))
+                .await
+            {
+                println!("Failed to send daily leetcode question {why}");
+            }
         }
         Err(why) => {
             println!("Failed to fetch daily question {why}");
-            message
         }
     }
 }
