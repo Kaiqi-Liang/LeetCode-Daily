@@ -280,14 +280,23 @@ fn construct_leaderboard<'a>(
     message.push("The current leaderboard:\n");
     let mut leaderboard = users
         .iter()
-        .map(|(id, user)| (get_user_from_id!(guilds, guild_id, id), user.score))
+        .map(|(id, user)| {
+            (
+                get_user_from_id!(guilds, guild_id, id),
+                user.score,
+                user.monthly_record,
+            )
+        })
         .collect::<Vec<_>>();
     leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
     let mut has_score = false;
-    for (user, score) in leaderboard {
+    for (user, score, monthly_record) in leaderboard {
         if score > 0 {
             has_score = true;
-            message.push(format!("{}: {score}\n", user.name));
+            message.push(format!(
+                "{}\n\t{score} points\n\t{monthly_record} questions completed this month\n",
+                user.name
+            ));
         }
     }
     if !has_score {
