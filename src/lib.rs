@@ -43,6 +43,7 @@ struct Status {
     voted_for: Option<UserId>,
     submitted: Option<String>,
     weekly_submissions: usize,
+    monthly_record: usize,
     score: usize,
 }
 
@@ -377,7 +378,39 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
             message.push("Yesterday ");
             let mut penalties = 0;
             let mut votes = HashMap::new();
+            if Utc::now().day0() == 0 {
+                if let Some(status) = data
+                    .users
+                    .values()
+                    .max_by_key(|status| status.monthly_record)
+                {
+                    let highest_monthly_record = status.monthly_record;
+                    if highest_monthly_record > 0 {
+                        let mut message = MessageBuilder::new();
+                        message.push("Welcome to a new month! Last month ");
+                        for (user_id, status) in
+                            data.users.iter_mut().filter(|(_, monthly_record)| {
+                                monthly_record.monthly_record == highest_monthly_record
+                            })
+                        {
+                            message.mention(user_id);
+                            status.score += 5;
+                        }
+                        send_message_with_leaderboard!(
+                            ctx,
+                            &state.guilds,
+                            guild_id,
+                            get_channel_from_guild!(data),
+                            &data.users,
+                            message.push(format!("completed {highest_monthly_record} questions which is the highest in this server! You have all been rewarded 5 points\n"))
+                        );
+                    }
+                }
+            }
             for user in data.users.values_mut() {
+                if Utc::now().day0() == 0 {
+                    user.monthly_record = 0;
+                }
                 if let Some(voted_for) = user.voted_for {
                     votes
                         .entry(voted_for)
@@ -658,8 +691,13 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         let score: usize =
                             (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
                         user.score += score;
+                        user.monthly_record += 1;
                         construct_congrats_message!(message, state, guild_id, user_id)
-                            .push(format!("completing today's challenge! You have gained {score} points, your current score is {}", user.score));
+                            .push(format!("completing today's challenge! You have been rewarded {} points, your current score is {}. This month you have completed {} questions",
+                                score,
+                                user.score,
+                                user.monthly_record,
+                            ));
                         let users_not_yet_completed = data
                             .users
                             .iter()
@@ -887,6 +925,7 @@ pub async fn initialise_guild(
                                 voted_for: None,
                                 submitted: None,
                                 weekly_submissions: 0,
+                                monthly_record: 0,
                                 score: 0,
                             },
                         ))
