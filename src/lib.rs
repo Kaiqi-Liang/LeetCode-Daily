@@ -1,5 +1,5 @@
 mod leetcode;
-use chrono::{Datelike, TimeDelta, TimeZone, Utc, Weekday};
+use chrono::{Datelike, Month, TimeDelta, TimeZone, Utc, Weekday};
 use leetcode::send_leetcode_daily_question_message;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,7 @@ struct Status {
     voted_for: Option<UserId>,
     submitted: Option<String>,
     weekly_submissions: usize,
-    monthly_record: usize,
+    monthly_record: u32,
     score: usize,
 }
 
@@ -394,6 +394,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                     .max_by_key(|status| status.monthly_record)
                 {
                     let highest_monthly_record = status.monthly_record;
+                    let last_month = Utc::now().date_naive().pred_opt().expect("Invalid date");
                     if highest_monthly_record > 0 {
                         let mut message = MessageBuilder::new();
                         message.push("Welcome to a new month! Last month ");
@@ -404,6 +405,13 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                         {
                             message.mention(user_id);
                             status.score += 5;
+                            if highest_monthly_record == last_month.day() {
+                                status.score += 10;
+                            }
+                        }
+                        message.push(format!("completed {highest_monthly_record} questions which is the highest in this server! You have all been rewarded 5 points\n"));
+                        if highest_monthly_record == last_month.day() {
+                            message.push(format!("And another 10 points for earning the Daily Challenge badge for {:?}\n", Month::try_from(last_month.month() as u8).expect("Invalid month")));
                         }
                         send_message_with_leaderboard!(
                             ctx,
@@ -411,7 +419,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                             guild_id,
                             get_channel_from_guild!(data),
                             &data.users,
-                            message.push(format!("completed {highest_monthly_record} questions which is the highest in this server! You have all been rewarded 5 points\n"))
+                            message
                         );
                     }
                 }
