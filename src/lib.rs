@@ -14,6 +14,7 @@ use serenity::{
     utils::{EmbedMessageBuilding, MessageBuilder},
 };
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     error::Error,
     fs::File,
@@ -119,7 +120,10 @@ macro_rules! construct_format_message {
 
 macro_rules! construct_badge_message {
     ($message:expr, $month:expr) => {
-        $message.push(format!(" for earning the Daily Challenge badge for {:?}\n", Month::try_from($month.month() as u8).expect("Invalid month")))
+        $message.push(format!(
+            " for earning the Daily Challenge badge for {:?}\n",
+            Month::try_from($month.month() as u8).expect("Invalid month")
+        ))
     };
 }
 
@@ -294,7 +298,14 @@ fn construct_leaderboard<'a>(
             )
         })
         .collect::<Vec<_>>();
-    leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
+    leaderboard.sort_by(|a, b| {
+        let cmp = b.1.cmp(&a.1);
+        if let Ordering::Equal = cmp {
+            b.2.cmp(&a.2)
+        } else {
+            cmp
+        }
+    });
     let mut has_score = false;
     for (user, score, monthly_record) in leaderboard {
         if score > 0 {
@@ -417,7 +428,10 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                         }
                         message.push(format!("completed {highest_monthly_record} questions which is the highest in this server! You have all been rewarded 5 points\n"));
                         if highest_monthly_record == last_month.day() {
-                            construct_badge_message!(message.push("And another 10 points"), last_month);
+                            construct_badge_message!(
+                                message.push("And another 10 points"),
+                                last_month
+                            );
                         }
                         send_message_with_leaderboard!(
                             ctx,
