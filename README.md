@@ -70,7 +70,7 @@ cargo b --release
 target/release/leetcode_daily
 ```
 
-To update the code and deploy it, use the [deploy.sh](deploy.sh) script which kills the current executing process and runs the above 2 commands
+To update the code and deploy it, use the [deploy.sh](deploy.sh) script which fetches the latest commit and runs the [restart.sh](restart.sh) script to `kill` the current executing process and start up a new process
 
 ```bash
 sh deploy.sh
