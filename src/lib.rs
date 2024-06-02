@@ -336,6 +336,19 @@ fn time_till_utc_midnight() -> Result<TimeDelta, Box<dyn Error>> {
         .signed_duration_since(Utc::now()))
 }
 
+fn num_days_curr_month() -> Result<u32, Box<dyn Error>> {
+    let now = Utc::now();
+    let this_month = Utc
+        .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
+        .unwrap();
+    let next_month = Utc
+        .with_ymd_and_hms(now.year(), now.month() + 1, 1, 0, 0, 0)
+        .unwrap();
+    Ok(TryInto::<u32>::try_into(
+        next_month.signed_duration_since(this_month).num_days(),
+    )?)
+}
+
 async fn initialise_guilds(
     ctx: &Context,
     guild_id: &GuildId,
@@ -734,7 +747,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                 user.score,
                                 user.monthly_record,
                             ));
-                        if user.monthly_record == Utc::now().day() {
+                        if user.monthly_record == num_days_curr_month()? {
                             construct_badge_message!(message.push("Great job"), Utc::now());
                         }
                         let users_not_yet_completed = data
