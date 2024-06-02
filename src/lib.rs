@@ -493,13 +493,11 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
     loop {
         let now = Utc::now();
         let num_days_from_sunday: i64 = Weekday::Sun.days_since(now.weekday()).into();
-        let same_day_until_contest_start = now
+        let same_day_until_contest_start = Utc
+            .with_ymd_and_hms(now.year(), now.month(), now.day(), 2, 30, 0)
+            .unwrap()
             .time()
-            .signed_duration_since(
-                Utc.with_ymd_and_hms(now.year(), now.month(), now.day(), 14, 30, 0)
-                    .unwrap()
-                    .time(),
-            )
+            .signed_duration_since(now.time())
             .num_seconds();
         let duration = Duration::from_secs(
             (if num_days_from_sunday == 0 {
@@ -542,7 +540,7 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
             write_to_database!(state);
         }
         sleep(Duration::from_secs(
-            chrono::Duration::minutes(60).num_seconds().try_into()?,
+            chrono::Duration::minutes(90).num_seconds().try_into()?,
         ))
         .await;
         let mut data = ctx.data.write().await;
