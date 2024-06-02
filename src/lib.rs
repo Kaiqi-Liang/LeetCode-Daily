@@ -117,6 +117,12 @@ macro_rules! construct_format_message {
     };
 }
 
+macro_rules! construct_badge_message {
+    ($message:expr, $month:expr) => {
+        $message.push(format!(" for earning the Daily Challenge badge for {:?}\n", Month::try_from($month.month() as u8).expect("Invalid month")))
+    };
+}
+
 macro_rules! send_daily_message_with_leaderboard {
     ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr) => {
         let thread_id = get_thread_from_guild!($data);
@@ -411,7 +417,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                         }
                         message.push(format!("completed {highest_monthly_record} questions which is the highest in this server! You have all been rewarded 5 points\n"));
                         if highest_monthly_record == last_month.day() {
-                            message.push(format!("And another 10 points for earning the Daily Challenge badge for {:?}\n", Month::try_from(last_month.month() as u8).expect("Invalid month")));
+                            construct_badge_message!(message.push("And another 10 points"), last_month);
                         }
                         send_message_with_leaderboard!(
                             ctx,
@@ -715,6 +721,9 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                 user.score,
                                 user.monthly_record,
                             ));
+                        if user.monthly_record == Utc::now().day() {
+                            construct_badge_message!(message.push("Great job"), Utc::now());
+                        }
                         let users_not_yet_completed = data
                             .users
                             .iter()
