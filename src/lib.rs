@@ -122,7 +122,7 @@ macro_rules! construct_badge_message {
     ($message:expr, $month:expr) => {
         $message.push(format!(
             " for earning the Daily Challenge badge for {:?}\n",
-            Month::try_from($month.month() as u8).expect("Invalid month")
+            Month::try_from(TryInto::<u8>::try_into($month.month())?)?
         ))
     };
 }
@@ -322,17 +322,18 @@ fn construct_leaderboard<'a>(
     message
 }
 
-fn time_till_utc_midnight() -> TimeDelta {
-    Utc.from_utc_datetime(
-        &Utc::now()
-            .naive_utc()
-            .date()
-            .succ_opt()
-            .expect("Invalid date")
-            .and_hms_opt(0, 0, 0)
-            .expect("Invalid hour, minute and/or second"),
-    )
-    .signed_duration_since(Utc::now())
+fn time_till_utc_midnight() -> Result<TimeDelta, Box<dyn Error>> {
+    Ok(Utc
+        .from_utc_datetime(
+            &Utc::now()
+                .naive_utc()
+                .date()
+                .succ_opt()
+                .ok_or("Invalid date")?
+                .and_hms_opt(0, 0, 0)
+                .ok_or("Invalid time")?,
+        )
+        .signed_duration_since(Utc::now()))
 }
 
 async fn initialise_guilds(
@@ -369,7 +370,7 @@ pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
 
 pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>> {
     loop {
-        let mut duration: u64 = time_till_utc_midnight().num_seconds().try_into()?;
+        let mut duration: u64 = time_till_utc_midnight()?.num_seconds().try_into()?;
         println!("{duration} seconds until next daily");
         let num_secs_in_an_hour: u64 = chrono::Duration::minutes(60).num_seconds().try_into()?;
         if duration > num_secs_in_an_hour {
@@ -411,7 +412,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                     .max_by_key(|status| status.monthly_record)
                 {
                     let highest_monthly_record = status.monthly_record;
-                    let last_month = Utc::now().date_naive().pred_opt().expect("Invalid date");
+                    let last_month = Utc::now().date_naive().pred_opt().ok_or("Invalid date")?;
                     if highest_monthly_record > 0 {
                         let mut message = MessageBuilder::new();
                         message.push("Welcome to a new month! Last month ");
@@ -724,7 +725,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                     } else {
                         user.submitted = Some(msg.link());
                         let score: usize =
-                            (time_till_utc_midnight().num_hours() / 10 + 1).try_into()?;
+                            (time_till_utc_midnight()?.num_hours() / 10 + 1).try_into()?;
                         user.score += score;
                         user.monthly_record += 1;
                         construct_congrats_message!(message, state, guild_id, user_id)
