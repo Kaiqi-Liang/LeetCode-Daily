@@ -396,12 +396,12 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                 if !data.active_daily {
                     continue;
                 }
+                data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
                 if data.poll_id.is_some() {
                     get_thread_from_guild!(data)
                         .say(&ctx.http, "An hour remaining before voting ends")
                         .await?;
                 }
-                data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
             }
         }
 
@@ -742,13 +742,9 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         user.score += score;
                         user.monthly_record += 1;
                         construct_congrats_message!(message, state, guild_id, user_id)
-                            .push(format!("completing today's challenge! You have been rewarded {} points, your current score is {}.\nThis month you have completed {} questions",
-                                score,
-                                user.score,
-                                user.monthly_record,
-                            ));
+                            .push(format!("completing today's challenge! You have been rewarded {score} points"));
                         if user.monthly_record == num_days_curr_month()? {
-                            construct_badge_message!(message.push(". Great job"), Utc::now());
+                            construct_badge_message!(message.push("\nGreat job"), Utc::now());
                         }
                         let users_not_yet_completed = data
                             .users
