@@ -129,20 +129,33 @@ macro_rules! construct_badge_message {
 
 macro_rules! send_daily_message_with_leaderboard {
     ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr) => {
-        let thread_id = get_thread_from_guild!($data);
+        let channel_id = get_channel_from_guild!($data);
+        let message_id = send_leetcode_daily_question_message($ctx, channel_id)
+            .await?
+            .id;
+        $data.thread_id = channel_id
+            .create_thread_from_message(
+                &$ctx.http,
+                message_id,
+                CreateThread::new(Utc::now().format("%d/%m/%Y").to_string())
+                    .kind(ChannelType::PublicThread)
+                    .auto_archive_duration(AutoArchiveDuration::OneDay),
+            )
+            .await
+            .map(|channel| channel.id)
+            .ok();
         send_message_with_leaderboard!(
             $ctx,
             &$state.guilds,
             $guild_id,
-            thread_id,
+            $data.thread_id.ok_or("Failed to create thread")?,
             &$data.users,
             construct_format_message!($message
                 .push("Share your code in the format below to confirm your completion of today's ")
                 .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                .push(" Daily @everyone\n"))
+                .push(" Daily\n"))
             .push("\n\n")
-        );
-        send_leetcode_daily_question_message($ctx, thread_id).await;
+        )
     };
 }
 
@@ -373,8 +386,8 @@ async fn initialise_guilds(
 }
 
 pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
-    let mut data = ctx.data.write().await;
     println!("Setting up guilds {:?}", ready.guilds);
+    let mut data = ctx.data.write().await;
     for guild in ready.guilds {
         initialise_guilds(ctx, &guild.id, get_shared_state!(data)).await?;
     }
@@ -496,7 +509,6 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
             if votes.is_empty() {
                 message.push("There are no votes\n");
             }
-            data.thread_id = create_thread!(ctx, data, Utc::now().format("%d/%m/%Y").to_string());
             send_daily_message_with_leaderboard!(ctx, state, guild_id, data, message.push('\n'));
         }
         write_to_database!(state);
@@ -623,11 +635,6 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                 };
                                 *active = !*active;
                                 if args[1] == "daily" && *active && data.thread_id.is_none() {
-                                    data.thread_id = create_thread!(
-                                        ctx,
-                                        data,
-                                        Utc::now().format("%d/%m/%Y").to_string()
-                                    );
                                     send_daily_message_with_leaderboard!(
                                         ctx,
                                         state,
@@ -741,8 +748,11 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                             (time_till_utc_midnight()?.num_hours() / 10 + 1).try_into()?;
                         user.score += score;
                         user.monthly_record += 1;
-                        construct_congrats_message!(message, state, guild_id, user_id)
-                            .push(format!("completing today's challenge! You have been rewarded {score} points"));
+                        construct_congrats_message!(message, state, guild_id, user_id).push(
+                            format!(
+                            "completing today's challenge! You have been rewarded {score} points"
+                        ),
+                        );
                         if user.monthly_record == num_days_curr_month()? {
                             construct_badge_message!(message.push("\nGreat job"), Utc::now());
                         }
@@ -991,8 +1001,6 @@ pub async fn initialise_guild(
             if channel.kind == ChannelType::Text {
                 data.channel_id = Some(channel.id);
                 let guild_id = &guild.id;
-                data.thread_id =
-                    create_thread!(ctx, data, Utc::now().format("%d/%m/%Y").to_string());
                 state.database.insert(*guild_id, data.clone());
                 initialise_guilds(ctx, guild_id, state).await?;
                 let mut message = MessageBuilder::new();
