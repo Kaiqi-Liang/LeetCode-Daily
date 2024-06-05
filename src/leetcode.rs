@@ -3,7 +3,9 @@ use std::error::Error;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use serenity::all::{ChannelId, Context, CreateEmbed, CreateMessage, Message};
+use serenity::all::{
+    ChannelId, Context, CreateEmbed, CreateMessage, EmbedMessageBuilding, Message, MessageBuilder,
+};
 
 #[derive(Serialize)]
 struct GraphQLQuery {
@@ -136,6 +138,17 @@ pub async fn send_leetcode_daily_question_message(
             true,
         );
     Ok(thread_id
-        .send_message(ctx, CreateMessage::new().embed(embed))
+        .send_message(
+            ctx,
+            CreateMessage::new()
+                .content(
+                    MessageBuilder::new()
+                        .push("Today's ")
+                        .push_named_link("LeetCode", "https://leetcode.com/problemset")
+                        .push(" Daily question is out @everyone")
+                        .build(),
+                )
+                .embed(embed),
+        )
         .await?)
 }

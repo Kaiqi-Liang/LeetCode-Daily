@@ -60,6 +60,7 @@ impl TypeMapKey for State {
 }
 
 const CUSTOM_ID: &str = "favourite_submission";
+const FORMAT_MESSAGE: &str = "Share your code in the format below to submit your solution\n";
 
 macro_rules! get_channel_from_guild {
     ($guild:expr) => {
@@ -150,11 +151,7 @@ macro_rules! send_daily_message_with_leaderboard {
             $guild_id,
             $data.thread_id.ok_or("Failed to create thread")?,
             &$data.users,
-            construct_format_message!($message
-                .push("Share your code in the format below to confirm your completion of today's ")
-                .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                .push(" Daily\n"))
-            .push("\n\n")
+            construct_format_message!($message.push(FORMAT_MESSAGE)).push("\n\n")
         )
     };
 }
@@ -553,9 +550,8 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
                         data.weekly_id.ok_or("Failed to create thread")?,
                         &data.users,
                         construct_format_message!(MessageBuilder::new()
-                            .push(
-                                "Weekly contest starting now!\nShare your code in the format below to submit your solutions\n"
-                            ))
+                            .push("Weekly contest starting now!\n")
+                            .push(FORMAT_MESSAGE))
                         .push("\n\nThe first 3 to finish all 4 questions will get bonus points @everyone")
                     );
                 }
