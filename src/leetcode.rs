@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serenity::all::{
-    ChannelId, Context, CreateEmbed, CreateMessage, EmbedMessageBuilding, Message, MessageBuilder,
+    ChannelId, Colour, Context, CreateEmbed, CreateMessage, EmbedMessageBuilding, Message, MessageBuilder
 };
 
 #[derive(Serialize)]
@@ -128,9 +128,16 @@ pub async fn send_leetcode_daily_question_message(
         challenge.question.frontend_question_id, challenge.question.title
     );
     let url = format!("{}{}", URL, challenge.link);
+    let colour = match challenge.question.difficulty.as_str() {
+        "Easy" => Colour::DARK_GREEN,
+        "Medium" => Colour::ORANGE,
+        "Difficult" => Colour::DARK_RED,
+        _ => Colour::default(),
+    };
     let embed = CreateEmbed::default()
         .title(title)
         .url(url)
+        .colour(colour)
         .field("Difficulty", challenge.question.difficulty, true)
         .field(
             "Acceptance Rate",
