@@ -340,7 +340,7 @@ fn time_till_utc_midnight() -> Result<TimeDelta, Box<dyn Error>> {
                 .date()
                 .succ_opt()
                 .ok_or("Invalid date")?
-                .and_hms_opt(0, 0, 0)
+                .and_hms_opt(0, 1, 0)
                 .ok_or("Invalid time")?,
         )
         .signed_duration_since(Utc::now()))
