@@ -92,16 +92,16 @@ macro_rules! send_help_message {
             $message
                 .push("Hi I'm LeetCode Daily, here to motivate you to do ")
                 .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                .push(" questions every single day 🤓\n\nI operate on a default channel and I create a thread in that channel when a new daily question comes out\n"),
+                .push_line(" questions every single day 🤓\n\nI operate on a default channel and I create a thread in that channel when a new daily question comes out"),
             $bot,
             $default_channel,
             $thread
         )
-        .push("\nSome other commands you can run are")
-        .push("\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/help`: Shows this help message, can be run anywhere\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off\n")
+        .push_line("\n\nSome other commands you can run are")
+        .push_line("* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/help`: Shows this help message, can be run anywhere\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off")
         .push("\nTo submit your code you have to put it in a spoiler tag and wrap it with ")
         .push_safe("```code```")
-        .push(" so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again\n")
+        .push_line(" so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again")
         ).build()).await?
     };
 }
@@ -110,10 +110,8 @@ macro_rules! construct_format_message {
     ($message:expr) => {
         $message
             .push("``")
-            .push(r"||```language")
-            .push("\n")
-            .push("code")
-            .push("\n")
+            .push_line(r"||```language")
+            .push_line("code")
             .push("```||")
             .push("``")
     };
@@ -121,8 +119,8 @@ macro_rules! construct_format_message {
 
 macro_rules! construct_badge_message {
     ($message:expr, $month:expr) => {
-        $message.push(format!(
-            " for earning the Daily Challenge badge for {:?}\n",
+        $message.push_line(format!(
+            " for earning the Daily Challenge badge for {:?}",
             Month::try_from(TryInto::<u8>::try_into($month.month())?)?
         ))
     };
@@ -151,7 +149,7 @@ macro_rules! send_daily_message_with_leaderboard {
             $guild_id,
             $data.thread_id.ok_or("Failed to create thread")?,
             &$data.users,
-            construct_format_message!($message.push(FORMAT_MESSAGE)).push("\n\n")
+            construct_format_message!($message.push(FORMAT_MESSAGE)).push_line("\n")
         )
     };
 }
@@ -172,7 +170,6 @@ macro_rules! construct_thread_message {
         } else {
             $message.push("Daily is not active")
         }
-        .push('\n')
     };
 }
 
@@ -297,7 +294,7 @@ fn construct_leaderboard<'a>(
     guild_id: &GuildId,
     message: &'a mut MessageBuilder,
 ) -> &'a mut MessageBuilder {
-    message.push("The current leaderboard:\n");
+    message.push_line("The current leaderboard:");
     let mut leaderboard = users
         .iter()
         .map(|(id, user)| {
@@ -322,12 +319,16 @@ fn construct_leaderboard<'a>(
         if score > 0 {
             has_score = true;
             message
-                .push(format!("{place}. {}\n\t", user.name))
-                .push_bold(score.to_string())
-                .push(if score > 1 { " points\n\t" } else { " point\n\t" })
-                .push_bold(monthly_record.to_string())
-                .push(if monthly_record > 1 { " questions" } else { " question" })
-                .push(" completed this month\n");
+                .push_line(format!("{place}. {}", user.name))
+                .push_bold(format!("\t{score}"))
+                .push_line(if score > 1 { " points" } else { " point" })
+                .push_bold(format!("\t{monthly_record}"))
+                .push(if monthly_record > 1 {
+                    " questions"
+                } else {
+                    " question"
+                })
+                .push_line(" completed this month");
             place += 1;
         }
     }
@@ -455,7 +456,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                                 status.score += 10;
                             }
                         }
-                        message.push(format!("completed {highest_monthly_record} questions which is the highest in this server! You have all been rewarded 5 points\n"));
+                        message.push_line(format!("completed {highest_monthly_record} questions which is the highest in this server! You have all been rewarded 5 points"));
                         if highest_monthly_record == last_month.day() {
                             construct_badge_message!(
                                 message.push("And another 10 points"),
@@ -494,22 +495,22 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                 user.voted_for = None;
             }
             message
-                .push(if penalties > 0 {
+                .push_line(if penalties > 0 {
                     format!("{penalties} {} did not complete the challenge 😭 each lost 1 point as a penalty", if penalties > 1 { "people" } else { "person" })
                 } else {
                     "everyone completed the challenge! Awesome job to start a new day!".to_string()
                 })
-                .push("\n\nThe number of votes received:\n");
+                .push_line("\nThe number of votes received:");
             let mut votes = votes.iter().collect::<Vec<_>>();
             votes.sort_by(|a, b| a.1.cmp(b.1));
             for (user_id, &votes) in votes.iter() {
                 get_user_from_id!(data.users, **user_id).score += votes;
                 message
                     .mention(get_user_from_id!(state.guilds, guild_id, user_id))
-                    .push(format!(": {votes}\n"));
+                    .push_line(format!(": {votes}"));
             }
             if votes.is_empty() {
-                message.push("There are no votes\n");
+                message.push_line("There are no votes");
             }
             send_daily_message_with_leaderboard!(ctx, state, guild_id, data, message.push('\n'));
         }
@@ -555,9 +556,11 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
                         data.weekly_id.ok_or("Failed to create thread")?,
                         &data.users,
                         construct_format_message!(MessageBuilder::new()
-                            .push("Weekly contest starting now!\n")
-                            .push(FORMAT_MESSAGE))
-                        .push("\n\nThe first 3 to finish all 4 questions will get bonus points @everyone")
+                            .push_line("Weekly contest starting now!")
+                            .push_line(FORMAT_MESSAGE))
+                        .push(
+                            "The first 3 to finish all 4 questions will get bonus points @everyone"
+                        )
                     );
                 }
                 for user in data.users.values_mut() {
@@ -755,7 +758,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         ),
                         );
                         if user.monthly_record == num_days_curr_month()? {
-                            construct_badge_message!(message.push("\nGreat job"), Utc::now());
+                            construct_badge_message!(message.push("Great job"), Utc::now());
                         }
                         let users_not_yet_completed = data
                             .users
@@ -794,7 +797,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         guild_id,
                         thread,
                         &data.users,
-                        message.push("\n\n")
+                        message.push_line('\n')
                     );
                 } else if data.active_weekly {
                     if let Some(weekly_id) = data
@@ -833,7 +836,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                 guild_id,
                                 weekly_id,
                                 &data.users,
-                                message.push("\n\n")
+                                message.push_line('\n')
                             );
                         } else {
                             weekly_id
@@ -856,13 +859,12 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
 
 fn build_submission_message(guild: &Data, guilds: &Guilds, guild_id: &GuildId) -> String {
     let mut message = MessageBuilder::new();
-    message.push("Choose your favourite submission\n");
+    message.push_line("Choose your favourite submission");
     for (id, status) in guild.users.iter() {
         if let Some(submitted) = &status.submitted {
             message
                 .mention(get_user_from_id!(guilds, guild_id, id))
-                .push(submitted)
-                .push("\n");
+                .push_line(submitted);
         }
     }
     message.build()
@@ -1011,7 +1013,7 @@ pub async fn initialise_guild(
                     state,
                     guild_id,
                     data,
-                    MessageBuilder::new().push("\n\n")
+                    MessageBuilder::new().push_line('\n')
                 );
                 return Ok(());
             }
