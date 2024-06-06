@@ -317,13 +317,17 @@ fn construct_leaderboard<'a>(
         }
     });
     let mut has_score = false;
+    let mut place = 1;
     for (user, score, monthly_record) in leaderboard {
         if score > 0 {
             has_score = true;
             message.push(format!(
-                "{}\n\t{score} points\n\t{monthly_record} questions completed this month\n",
-                user.name
+                "{place}. {}\n\t{score} {}\n\t{monthly_record} {} completed this month\n",
+                user.name,
+                if score > 1 { "points" } else { "point" },
+                if monthly_record > 1 { "questions" } else { "question" },
             ));
+            place += 1;
         }
     }
     if !has_score {
@@ -490,7 +494,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
             }
             message
                 .push(if penalties > 0 {
-                    format!("{penalties} people did not complete the challenge 😭 each lost 1 point as a penalty")
+                    format!("{penalties} {} did not complete the challenge 😭 each lost 1 point as a penalty", if penalties > 1 { "people" } else { "person" })
                 } else {
                     "everyone completed the challenge! Awesome job to start a new day!".to_string()
                 })

@@ -4,7 +4,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serenity::all::{
-    ChannelId, Colour, Context, CreateEmbed, CreateMessage, EmbedMessageBuilding, Message, MessageBuilder
+    ChannelId, Colour, Context, CreateEmbed, CreateMessage, EmbedMessageBuilding, Message,
+    MessageBuilder,
 };
 
 #[derive(Serialize)]
