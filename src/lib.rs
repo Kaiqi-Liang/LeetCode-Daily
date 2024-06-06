@@ -321,12 +321,13 @@ fn construct_leaderboard<'a>(
     for (user, score, monthly_record) in leaderboard {
         if score > 0 {
             has_score = true;
-            message.push(format!(
-                "{place}. {}\n\t{score} {}\n\t{monthly_record} {} completed this month\n",
-                user.name,
-                if score > 1 { "points" } else { "point" },
-                if monthly_record > 1 { "questions" } else { "question" },
-            ));
+            message
+                .push(format!("{place}. {}\n\t", user.name))
+                .push_bold(score.to_string())
+                .push(if score > 1 { " points\n\t" } else { " point\n\t" })
+                .push_bold(monthly_record.to_string())
+                .push(if monthly_record > 1 { " questions" } else { " question" })
+                .push(" completed this month\n");
             place += 1;
         }
     }
