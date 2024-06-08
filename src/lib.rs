@@ -752,11 +752,14 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                             (time_till_utc_midnight()?.num_hours() / 10 + 1).try_into()?;
                         user.score += score;
                         user.monthly_record += 1;
-                        construct_congrats_message!(message, state, guild_id, user_id).push(
-                            format!(
-                            "completing today's challenge! You have been rewarded {score} points"
-                        ),
-                        );
+                        construct_congrats_message!(message, state, guild_id, user_id)
+                            .push("completing today's challenge! You have been rewarded ")
+                            .push_bold(score.to_string())
+                            .push(" points, your current score is ")
+                            .push_bold(user.score.to_string())
+                            .push(". This month you have completed ")
+                            .push_bold(user.monthly_record.to_string())
+                            .push_line(" questions!");
                         if user.monthly_record == num_days_curr_month()? {
                             construct_badge_message!(message.push("Great job"), Utc::now());
                         }
@@ -791,14 +794,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         }
                     }
                     data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
-                    send_message_with_leaderboard!(
-                        ctx,
-                        &state.guilds,
-                        guild_id,
-                        thread,
-                        &data.users,
-                        message.push_line('\n')
-                    );
+                    thread.say(&ctx.http, message.build()).await?;
                 } else if data.active_weekly {
                     if let Some(weekly_id) = data
                         .weekly_id
