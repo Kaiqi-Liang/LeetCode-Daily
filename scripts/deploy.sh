@@ -1,3 +1,3 @@
 git pull
 cargo b --release
-sh restart.sh
+sh scripts/restart.sh

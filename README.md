@@ -1,17 +1,19 @@
 # LeetCode Daily
 
 ## Introduction
+
 Hi I'm LeetCode Daily, here to motivate you to do LeetCode questions every single day 🤓
 
 I operate on a default channel and I create a thread in that channel when a new daily question comes out
 
 You can change it by running the following command
 
-```
+```discord
 /channel channel_id
 ```
 
 Some other commands you can run are
+
 * `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel
 * `/help`: Shows this help message, can be run anywhere
 * `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread
@@ -19,7 +21,7 @@ Some other commands you can run are
 
 To submit your code you have to put it a spoiler tag and wrap it with \```code\``` so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again
 
-```
+```discord
 ||```language
 code
 ```||
@@ -70,8 +72,8 @@ cargo b --release
 target/release/leetcode_daily
 ```
 
-To update the code and deploy it, use the [deploy.sh](deploy.sh) script which fetches the latest commit and runs the [restart.sh](restart.sh) script to start up a new process and `kill` the existing one
+To update the code and deploy it, use the [deploy.sh](scripts/deploy.sh) script which fetches the latest commit and runs the [restart.sh](scripts/restart.sh) script to start up a new process and `kill` the existing one
 
 ```bash
-sh deploy.sh
+sh scripts/deploy.sh
 ```
