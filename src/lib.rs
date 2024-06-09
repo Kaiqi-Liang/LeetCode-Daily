@@ -60,7 +60,6 @@ impl TypeMapKey for State {
 }
 
 const CUSTOM_ID: &str = "favourite_submission";
-const FORMAT_MESSAGE: &str = "Share your code in the format below to submit your solution\n";
 
 macro_rules! get_channel_from_guild {
     ($guild:expr) => {
@@ -132,10 +131,18 @@ macro_rules! send_daily_message_with_leaderboard {
         let message_id = send_leetcode_daily_question_message($ctx, channel_id)
             .await?
             .id;
-        $data.thread_id = channel_id
+        create_thread_from_message!(
+            $ctx, $state, $guild_id, $data, $message, channel_id, message_id
+        )
+    };
+}
+
+macro_rules! create_thread_from_message {
+    ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr, $channel_id:ident, $message_id:ident) => {
+        $data.thread_id = $channel_id
             .create_thread_from_message(
                 &$ctx.http,
-                message_id,
+                $message_id,
                 CreateThread::new(Utc::now().format("%d/%m/%Y").to_string())
                     .kind(ChannelType::PublicThread)
                     .auto_archive_duration(AutoArchiveDuration::OneDay),
@@ -149,7 +156,10 @@ macro_rules! send_daily_message_with_leaderboard {
             $guild_id,
             $data.thread_id.ok_or("Failed to create thread")?,
             &$data.users,
-            construct_format_message!($message.push(FORMAT_MESSAGE)).push_line("\n")
+            construct_format_message!(
+                $message.push("Share your code in the format below to submit your solution\n")
+            )
+            .push_line('\n')
         )
     };
 }
@@ -263,21 +273,6 @@ macro_rules! send_channel_usage_message {
                     .build(),
             )
             .await?;
-    };
-}
-
-macro_rules! create_thread {
-    ($ctx:ident, $guild:ident, $title:expr) => {
-        get_channel_from_guild!($guild)
-            .create_thread(
-                &$ctx.http,
-                CreateThread::new($title)
-                    .kind(ChannelType::PublicThread)
-                    .auto_archive_duration(AutoArchiveDuration::OneDay),
-            )
-            .await
-            .map(|channel| channel.id)
-            .ok()
     };
 }
 
@@ -547,20 +542,19 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
             let state = get_shared_state!(data);
             for (guild_id, data) in state.database.iter_mut() {
                 if data.active_weekly {
-                    data.weekly_id =
-                        create_thread!(ctx, data, format!("{:?}", Utc::now().iso_week()));
-                    send_message_with_leaderboard!(
+                    let channel_id = get_channel_from_guild!(data);
+                    let message_id = channel_id.say(ctx.clone(),
+                        "Weekly contest starting now! The first 3 to finish all 4 questions will get bonus points @everyone")
+                        .await?
+                        .id;
+                    create_thread_from_message!(
                         ctx,
-                        &state.guilds,
+                        state,
                         guild_id,
-                        data.weekly_id.ok_or("Failed to create thread")?,
-                        &data.users,
-                        construct_format_message!(MessageBuilder::new()
-                            .push_line("Weekly contest starting now!")
-                            .push_line(FORMAT_MESSAGE))
-                        .push(
-                            "The first 3 to finish all 4 questions will get bonus points @everyone"
-                        )
+                        data,
+                        MessageBuilder::new(),
+                        channel_id,
+                        message_id
                     );
                 }
                 for user in data.users.values_mut() {
