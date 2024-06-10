@@ -187,20 +187,7 @@ macro_rules! construct_reward_message {
         $message
             .push(" You have been rewarded ")
             .push_bold($reward.to_string())
-            .push(" points!")
-    };
-}
-
-macro_rules! construct_weekly_submission_message {
-    ($message:expr, $state:ident, $guild_id:ident, $user_id:ident, $user:ident, $config:expr) => {
-        construct_reward_message!(
-            construct_congrats_message!($message, $state, $guild_id, $user_id)
-                .push($config.1)
-                .push_bold($config.2)
-                .push(format!("{} in the contest!", $config.3)),
-            $config.0
-        );
-        $user.score += $config.0;
+            .push(" points")
     };
 }
 
@@ -813,23 +800,24 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                     let user = get_user_from_id!(data.users, *user_id);
                     if user.weekly_submissions < 4 {
                         user.weekly_submissions += 1;
-                        construct_weekly_submission_message!(
-                            message,
-                            state,
-                            guild_id,
-                            user_id,
-                            user,
-                            if user.weekly_submissions == 4 {
-                                (reward, "coming ", String::from(place), "")
-                            } else {
-                                (
-                                    1,
-                                    "finishing question ",
-                                    user.weekly_submissions.to_string(),
-                                    "/4",
-                                )
-                            }
+                        let (score, result, bold_text, end) = if user.weekly_submissions == 4 {
+                            (reward, "coming ", String::from(place), "")
+                        } else {
+                            (
+                                1,
+                                "finishing question ",
+                                user.weekly_submissions.to_string(),
+                                "/4",
+                            )
+                        };
+                        construct_reward_message!(
+                            construct_congrats_message!(message, state, guild_id, user_id)
+                                .push(result)
+                                .push_bold(bold_text)
+                                .push(format!("{end} in the contest!")),
+                            score
                         );
+                        user.score += score;
                         weekly_id.say(&ctx.http, message.build()).await?;
                     } else {
                         weekly_id
