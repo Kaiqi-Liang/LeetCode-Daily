@@ -60,6 +60,7 @@ impl TypeMapKey for State {
 }
 
 const CUSTOM_ID: &str = "favourite_submission";
+const POLL_ERROR_MESSAGE: &str = "Poll message is not in this channel";
 
 macro_rules! get_channel_from_guild {
     ($guild:expr) => {
@@ -908,13 +909,11 @@ async fn poll(
                 .await?;
             Ok(message)
         } else {
-            thread
-                .say(&ctx.http, "Poll message is not in this channel")
-                .await?;
-            Err("Poll message is not in this channel".into())
+            thread.say(&ctx.http, POLL_ERROR_MESSAGE).await?;
+            Err(POLL_ERROR_MESSAGE.into())
         }
     } else {
-        thread
+        let message = thread
             .send_message(
                 &ctx.http,
                 CreateMessage::new()
@@ -929,8 +928,9 @@ async fn poll(
                         .placeholder("No submission selected"),
                     ),
             )
-            .await
-            .map_err(|e| e.into())
+            .await?;
+        message.pin(&ctx.http).await?;
+        Ok(message)
     }
 }
 
