@@ -427,9 +427,14 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                 }
                 data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
                 if data.poll_id.is_some() {
-                    get_thread_from_guild!(data)
-                        .say(&ctx.http, "An hour remaining before voting ends")
-                        .await?;
+                    send_message_with_leaderboard!(
+                        ctx,
+                        &state.guilds,
+                        guild_id,
+                        get_thread_from_guild!(data),
+                        &data.users,
+                        MessageBuilder::new().push_line("An hour remaining before voting ends\n")
+                    );
                 }
             }
         }
