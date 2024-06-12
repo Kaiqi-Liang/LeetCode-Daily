@@ -1,1 +1,1 @@
-ssh oracle "cd ~/LeetCode-Daily && sh scripts/build.sh"
+ssh oracle "cd ~/LeetCode-Daily && sh scripts/run.sh"

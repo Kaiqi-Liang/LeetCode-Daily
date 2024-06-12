@@ -72,8 +72,8 @@ cargo b --release
 target/release/leetcode_daily
 ```
 
-To update the code and deploy it, use the [deploy.sh](scripts/deploy.sh) script which fetches the latest commit and runs the [restart.sh](scripts/restart.sh) script to start up a new process and `kill` the existing one
+To update the code and run it, use the [run.sh](scripts/run.sh) script which fetches the latest commit and runs the [restart.sh](scripts/restart.sh) script to start up a new process and `kill` the existing one
 
 ```bash
-sh scripts/deploy.sh
+sh scripts/run.sh
 ```
