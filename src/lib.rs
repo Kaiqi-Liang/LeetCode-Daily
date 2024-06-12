@@ -187,7 +187,7 @@ macro_rules! construct_reward_message {
         $message
             .push(" You have been rewarded ")
             .push_bold($reward.to_string())
-            .push(" points")
+            .push(if $reward > 1 { " points" } else { " point" })
     };
 }
 
@@ -743,7 +743,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         construct_reward_message!(
                             construct_congrats_message!(message, state, guild_id, user_id)
                                 .push("completing today's challenge!"),
-                            score.to_string()
+                            score
                         )
                         .push(", your current score is ")
                         .push_bold(user.score.to_string())
