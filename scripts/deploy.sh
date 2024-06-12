@@ -1,3 +1,1 @@
-git pull
-cargo b --release
-sh scripts/restart.sh
+ssh oracle sh LeetCode-Daily/scripts/build.sh
