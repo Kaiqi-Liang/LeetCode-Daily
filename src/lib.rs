@@ -433,7 +433,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                         guild_id,
                         get_thread_from_guild!(data),
                         &data.users,
-                        MessageBuilder::new().push_line("An hour remaining before voting ends\n")
+                        MessageBuilder::new().push_line("An hour left to make your submission for today's question if you haven't already\n")
                     );
                 }
             }
