@@ -132,7 +132,7 @@ pub async fn send_leetcode_daily_question_message(
     let colour = match challenge.question.difficulty.as_str() {
         "Easy" => Colour::DARK_GREEN,
         "Medium" => Colour::ORANGE,
-        "Difficult" => Colour::DARK_RED,
+        "Hard" => Colour::DARK_RED,
         _ => Colour::default(),
     };
     let embed = CreateEmbed::default()
