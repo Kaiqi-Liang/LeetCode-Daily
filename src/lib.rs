@@ -327,12 +327,11 @@ fn construct_leaderboard<'a>(
         }
     });
     let mut has_score = false;
-    let mut place = 1;
-    for (user, score, monthly_record) in leaderboard {
+    for (place, (user, score, monthly_record)) in leaderboard.into_iter().enumerate() {
         if score > 0 {
             has_score = true;
             message
-                .push_line(format!("{place}. {}", user.name))
+                .push_line(format!("{}. {}", place + 1, user.name))
                 .push_bold(format!("\t{score}"))
                 .push_line(if score > 1 { " points" } else { " point" })
                 .push_bold(format!("\t{monthly_record}"))
@@ -342,7 +341,6 @@ fn construct_leaderboard<'a>(
                     " question"
                 })
                 .push_line(" completed this month");
-            place += 1;
         }
     }
     if !has_score {
@@ -517,15 +515,20 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                 })
                 .push_line("\nThe number of votes received:");
             let mut votes = votes.iter().collect::<Vec<_>>();
-            votes.sort_by(|a, b| a.1.cmp(b.1));
-            for (user_id, &votes) in votes.iter() {
-                get_user_from_id!(data.users, **user_id).score += votes;
-                message
-                    .mention(get_user_from_id!(state.guilds, guild_id, user_id))
-                    .push_line(format!(": {votes}"));
-            }
+            votes.sort_by(|a, b| b.1.cmp(a.1));
             if votes.is_empty() {
                 message.push_line("There are no votes");
+            } else {
+                for (place, (user_id, &votes)) in votes.into_iter().enumerate() {
+                    get_user_from_id!(data.users, *user_id).score += votes;
+                    message
+                        .push((place + 1).to_string())
+                        .push(". ")
+                        .mention(get_user_from_id!(state.guilds, guild_id, user_id))
+                        .push(": ")
+                        .push_bold(votes.to_string())
+                        .push_line("");
+                }
             }
             send_daily_message_with_leaderboard!(ctx, state, guild_id, data, message.push('\n'));
         }
@@ -594,11 +597,47 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
         .await;
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
-        for data in state.database.values_mut() {
-            data.weekly_id = None;
-            for user in data.users.values_mut() {
+        for (guild_id, guild) in state.database.iter_mut() {
+            let mut message = MessageBuilder::new();
+            message.push_line("Weekly contest just ended, the results are:");
+            let mut submissions = guild
+                .users
+                .iter()
+                .filter_map(|(user_id, user)| {
+                    if user.weekly_submissions == 0 {
+                        None
+                    } else {
+                        Some((
+                            get_user_from_id!(state.guilds, guild_id, user_id),
+                            user.weekly_submissions,
+                        ))
+                    }
+                })
+                .collect::<Vec<_>>();
+            submissions.sort_by(|a, b| b.1.cmp(&a.1));
+            for (place, (user, submission)) in submissions.into_iter().enumerate() {
+                message
+                    .push((place + 1).to_string())
+                    .push(". ")
+                    .mention(user)
+                    .push(" completed ")
+                    .push_bold(submission.to_string())
+                    .push_line(" questions");
+            }
+            for user in guild.users.values_mut() {
                 user.weekly_submissions = 0;
             }
+            if let Some(weekly_id) = guild.weekly_id {
+                send_message_with_leaderboard!(
+                    ctx,
+                    &state.guilds,
+                    guild_id,
+                    weekly_id,
+                    &guild.users,
+                    message.push_line("")
+                );
+            }
+            guild.weekly_id = None;
         }
         write_to_database!(state);
     }
