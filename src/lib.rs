@@ -400,7 +400,7 @@ async fn initialise_guilds(
 }
 
 pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
-    println!("Setting up guilds {:?}", ready.guilds);
+    println!("[{}] Setting up guilds {:?}", Utc::now(), ready.guilds);
     let mut data = ctx.data.write().await;
     for guild in ready.guilds {
         initialise_guilds(ctx, &guild.id, get_shared_state!(data)).await?;
@@ -411,7 +411,7 @@ pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
 pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>> {
     loop {
         let mut duration: u64 = time_till_utc_midnight()?.num_seconds().try_into()?;
-        println!("{duration} seconds until next daily");
+        println!("[{}] {duration} seconds until next daily", Utc::now());
         let num_secs_in_an_hour: u64 = chrono::Duration::minutes(60).num_seconds().try_into()?;
         if duration > num_secs_in_an_hour {
             sleep(Duration::from_secs(duration - num_secs_in_an_hour)).await;
