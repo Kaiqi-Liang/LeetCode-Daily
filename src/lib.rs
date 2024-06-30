@@ -772,63 +772,60 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 send_channel_usage_message!(ctx, msg.channel_id);
             }
         } else if code_block.is_match(&msg.content) {
-            if let Some(thread) = data.thread_id {
-                if data.active_daily && msg.channel_id == thread {
-                    let user = get_user_from_id!(data.users, *user_id);
-                    if user.submitted.is_some() {
-                        message.push("You have already submitted today");
-                    } else {
-                        user.submitted = Some(msg.link());
-                        let score: usize =
-                            (time_till_utc_midnight()?.num_hours() / 10 + 1).try_into()?;
-                        user.score += score;
-                        user.monthly_record += 1;
-                        construct_reward_message!(
-                            construct_congrats_message!(message, state, guild_id, user_id)
-                                .push("completing today's challenge!"),
-                            score
-                        )
-                        .push(", your current score is ")
-                        .push_bold(user.score.to_string())
-                        .push(". This month you have completed ")
-                        .push_bold(user.monthly_record.to_string())
-                        .push_line(" questions!");
-                        if user.monthly_record == num_days_curr_month()? {
-                            construct_badge_message!(message.push("Great job"), Utc::now());
-                        }
-                        let users_not_yet_completed = data
-                            .users
-                            .iter()
-                            .filter_map(|(id, user)| {
-                                if user.submitted.is_some() {
-                                    None
-                                } else {
-                                    Some(get_user_from_id!(state.guilds, guild_id, id))
-                                }
-                            })
-                            .collect::<Vec<_>>();
-                        if let Some(poll_id) = data.poll_id {
-                            msg.channel_id
-                                .edit_message(
-                                    &ctx.http,
-                                    poll_id,
-                                    EditMessage::new().content(build_submission_message(
-                                        data,
-                                        &state.guilds,
-                                        guild_id,
-                                    )),
-                                )
-                                .await?;
-                        }
-                        if users_not_yet_completed.is_empty() {
-                            message.push(
-                                "Everyone has finished today's challenge, let's Grow Together!",
-                            );
-                        }
+            if data.active_daily && msg.channel_id == data.thread_id.unwrap_or(0.into()) {
+                let user = get_user_from_id!(data.users, *user_id);
+                if user.submitted.is_some() {
+                    message.push("You have already submitted today");
+                } else {
+                    user.submitted = Some(msg.link());
+                    let score: usize =
+                        (time_till_utc_midnight()?.num_hours() / 10 + 1).try_into()?;
+                    user.score += score;
+                    user.monthly_record += 1;
+                    construct_reward_message!(
+                        construct_congrats_message!(message, state, guild_id, user_id)
+                            .push("completing today's challenge!"),
+                        score
+                    )
+                    .push(", your current score is ")
+                    .push_bold(user.score.to_string())
+                    .push(". This month you have completed ")
+                    .push_bold(user.monthly_record.to_string())
+                    .push_line(" questions!");
+                    if user.monthly_record == num_days_curr_month()? {
+                        construct_badge_message!(message.push("Great job"), Utc::now());
                     }
-                    data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
-                    thread.say(&ctx.http, message.build()).await?;
+                    let users_not_yet_completed = data
+                        .users
+                        .iter()
+                        .filter_map(|(id, user)| {
+                            if user.submitted.is_some() {
+                                None
+                            } else {
+                                Some(get_user_from_id!(state.guilds, guild_id, id))
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    if let Some(poll_id) = data.poll_id {
+                        msg.channel_id
+                            .edit_message(
+                                &ctx.http,
+                                poll_id,
+                                EditMessage::new().content(build_submission_message(
+                                    data,
+                                    &state.guilds,
+                                    guild_id,
+                                )),
+                            )
+                            .await?;
+                    }
+                    if users_not_yet_completed.is_empty() {
+                        message
+                            .push("Everyone has finished today's challenge, let's Grow Together!");
+                    }
                 }
+                data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
+                msg.channel_id.say(&ctx.http, message.build()).await?;
             } else if data.active_weekly {
                 if let Some(weekly_id) = data
                     .weekly_id
@@ -873,7 +870,6 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                             .await?;
                     }
                 }
-            } else if !data.active_daily {
             }
         } else if let Some(thread) = data.thread_id {
             if channel == msg.channel_id {
