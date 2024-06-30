@@ -772,7 +772,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 send_channel_usage_message!(ctx, msg.channel_id);
             }
         } else if code_block.is_match(&msg.content) {
-            if data.active_daily && msg.channel_id == data.thread_id.unwrap_or(0.into()) {
+            if data.active_daily && msg.channel_id == data.thread_id.unwrap_or_default() {
                 let user = get_user_from_id!(data.users, *user_id);
                 if user.submitted.is_some() {
                     message.push("You have already submitted today");
