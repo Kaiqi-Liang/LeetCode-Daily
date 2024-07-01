@@ -120,7 +120,7 @@ macro_rules! construct_format_message {
 macro_rules! construct_badge_message {
     ($message:expr, $month:expr) => {
         $message.push_line(format!(
-            " for earning the Daily Challenge badge for {:?}",
+            " for earning the {:?} Daily Challenge badge!",
             Month::try_from(TryInto::<u8>::try_into($month.month())?)?
         ))
     };
@@ -456,10 +456,9 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                     .max_by_key(|status| status.monthly_record)
                 {
                     let highest_monthly_record = status.monthly_record;
-                    let last_month = Utc::now().date_naive().pred_opt().ok_or("Invalid date")?;
                     if highest_monthly_record > 0 {
-                        let mut message = MessageBuilder::new();
                         message.push("Welcome to a new month! Last month ");
+                        let last_month = Utc::now().date_naive().pred_opt().ok_or("Invalid date")?;
                         for (user_id, status) in
                             data.users.iter_mut().filter(|(_, monthly_record)| {
                                 monthly_record.monthly_record == highest_monthly_record
@@ -475,7 +474,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                             message
                                 .push(" completed ")
                                 .push_bold(highest_monthly_record.to_string())
-                                .push_line(" questions which is the highest in this server!"),
+                                .push(" questions which is the highest in this server!"),
                             5
                         );
                         if highest_monthly_record == last_month.day() {
@@ -483,7 +482,10 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                                 message.push(", and another 10 points"),
                                 last_month
                             );
+                        } else {
+                            message.push_line("");
                         }
+                        message.push_line("");
                     }
                 }
             }
