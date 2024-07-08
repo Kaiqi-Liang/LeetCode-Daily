@@ -14,10 +14,11 @@ You can change it by running the following command
 
 Some other commands you can run are
 
-* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel
 * `/help`: Shows this help message, can be run anywhere
+* `/random`: Send a random question, can be run anywhere
+* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel
 * `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread
-* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off
+* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere
 
 To submit your code you have to put it a spoiler tag and wrap it with \```code\``` so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again
 

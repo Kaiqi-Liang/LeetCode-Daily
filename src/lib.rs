@@ -1,6 +1,6 @@
 mod leetcode;
 use chrono::{Datelike, Month, TimeDelta, TimeZone, Utc, Weekday};
-use leetcode::send_leetcode_daily_question_message;
+use leetcode::{send_leetcode_daily_question_message, send_random_leetcode_question_message};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -98,7 +98,7 @@ macro_rules! send_help_message {
             $thread
         )
         .push_line("\n\nSome other commands you can run are")
-        .push_line("* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/help`: Shows this help message, can be run anywhere\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off")
+        .push_line("* `/help`: Shows this help message, can be run anywhere\n* `/random`: Send a random question, can be run anywhere\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere")
         .push("\nTo submit your code you have to put it in a spoiler tag and wrap it with ")
         .push_safe("```code```")
         .push_line(" so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again")
@@ -745,6 +745,8 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 .await?;
         } else if msg.content == "/help" {
             send_help_message!(ctx, message, bot, msg.channel_id, channel, data.thread_id);
+        } else if msg.content == "/random" {
+            send_random_leetcode_question_message(ctx, msg.channel_id).await?;
         } else if msg.content == "/scores"
             && (msg.channel_id == channel
                 || msg.channel_id == data.thread_id.unwrap_or_default()
