@@ -205,6 +205,16 @@ fn create_embed(question: &Question, link: String) -> CreateEmbed {
         )
 }
 
+macro_rules! embed_message {
+    ($before:expr, $after:expr) => {
+        MessageBuilder::new()
+            .push(format!("{} ", $before))
+            .push_named_link("LeetCode", "https://leetcode.com/problemset")
+            .push(format!(" {}", $after))
+            .build()
+    };
+}
+
 pub async fn send_leetcode_daily_question_message(
     ctx: &Context,
     thread_id: ChannelId,
@@ -217,13 +227,7 @@ pub async fn send_leetcode_daily_question_message(
         .send_message(
             ctx,
             CreateMessage::new()
-                .content(
-                    MessageBuilder::new()
-                        .push("Today's ")
-                        .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                        .push(" Daily question is out @everyone")
-                        .build(),
-                )
+                .content(embed_message!("Today's", "Daily question is out @everyone"))
                 .embed(create_embed(&challenge.question, challenge.link)),
         )
         .await?)
@@ -244,12 +248,7 @@ pub async fn send_random_leetcode_question_message(
             .send_message(
                 ctx,
                 CreateMessage::new()
-                    .content(
-                        MessageBuilder::new()
-                            .push("Here's a random question from ")
-                            .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                            .build(),
-                    )
+                    .content(embed_message!("Here's a random", "question"))
                     .embed(create_embed(
                         question,
                         format!("/problems/{}", question.title.replace(' ', "-")),
