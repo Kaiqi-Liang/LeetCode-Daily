@@ -182,6 +182,17 @@ macro_rules! construct_congrats_message {
     };
 }
 
+macro_rules! construct_summary_message {
+    ($message:expr, $user:ident) => {
+        $message
+            .push("\nYour current score is ")
+            .push_bold($user.score.to_string())
+            .push(". This month you have completed ")
+            .push_bold($user.monthly_record.to_string())
+            .push_line(" questions!");
+    };
+}
+
 macro_rules! construct_reward_message {
     ($message:expr, $reward:expr) => {
         $message
@@ -458,7 +469,8 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                     let highest_monthly_record = status.monthly_record;
                     if highest_monthly_record > 0 {
                         message.push("Welcome to a new month! Last month ");
-                        let last_month = Utc::now().date_naive().pred_opt().ok_or("Invalid date")?;
+                        let last_month =
+                            Utc::now().date_naive().pred_opt().ok_or("Invalid date")?;
                         for (user_id, status) in
                             data.users.iter_mut().filter(|(_, monthly_record)| {
                                 monthly_record.monthly_record == highest_monthly_record
@@ -617,7 +629,7 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
                 })
                 .collect::<Vec<_>>();
             if submissions.is_empty() {
-                message.push("No one participated in the contest 😩");
+                message.push_line("No one participated in the contest 😩");
             } else {
                 submissions.sort_by(|a, b| b.1.cmp(&a.1));
                 for (place, (user, submission)) in submissions.into_iter().enumerate() {
@@ -784,16 +796,14 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         (time_till_utc_midnight()?.num_hours() / 10 + 1).try_into()?;
                     user.score += score;
                     user.monthly_record += 1;
-                    construct_reward_message!(
-                        construct_congrats_message!(message, state, guild_id, user_id)
-                            .push("completing today's challenge!"),
-                        score
-                    )
-                    .push(", your current score is ")
-                    .push_bold(user.score.to_string())
-                    .push(". This month you have completed ")
-                    .push_bold(user.monthly_record.to_string())
-                    .push_line(" questions!");
+                    construct_summary_message!(
+                        construct_reward_message!(
+                            construct_congrats_message!(message, state, guild_id, user_id)
+                                .push("completing today's challenge!"),
+                            score
+                        ),
+                        user
+                    );
                     if user.monthly_record == num_days_curr_month()? {
                         construct_badge_message!(message.push("Great job"), Utc::now());
                     }
@@ -857,14 +867,17 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                 "/4",
                             )
                         };
-                        construct_reward_message!(
-                            construct_congrats_message!(message, state, guild_id, user_id)
-                                .push(result)
-                                .push_bold(bold_text)
-                                .push(format!("{end} in the contest!")),
-                            score
-                        );
                         user.score += score;
+                        construct_summary_message!(
+                            construct_reward_message!(
+                                construct_congrats_message!(message, state, guild_id, user_id)
+                                    .push(result)
+                                    .push_bold(bold_text)
+                                    .push(format!("{end} in the contest!")),
+                                score
+                            ),
+                            user
+                        );
                         weekly_id.say(&ctx.http, message.build()).await?;
                     } else {
                         weekly_id
