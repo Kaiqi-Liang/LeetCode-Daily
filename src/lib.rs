@@ -61,6 +61,7 @@ impl TypeMapKey for State {
 
 const CUSTOM_ID: &str = "favourite_submission";
 const POLL_ERROR_MESSAGE: &str = "Poll message is not in this channel";
+const NUM_SECS_IN_AN_HOUR: u64 = chrono::Duration::minutes(60).num_seconds() as _;
 
 macro_rules! get_channel_from_guild {
     ($guild:expr) => {
@@ -423,10 +424,9 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
     loop {
         let mut duration: u64 = time_till_utc_midnight()?.num_seconds().try_into()?;
         println!("[{}] {duration} seconds until next daily", Utc::now());
-        let num_secs_in_an_hour: u64 = chrono::Duration::minutes(60).num_seconds().try_into()?;
-        if duration > num_secs_in_an_hour {
-            sleep(Duration::from_secs(duration - num_secs_in_an_hour)).await;
-            duration = num_secs_in_an_hour;
+        if duration > NUM_SECS_IN_AN_HOUR {
+            sleep(Duration::from_secs(duration - NUM_SECS_IN_AN_HOUR)).await;
+            duration = NUM_SECS_IN_AN_HOUR;
             let mut data = ctx.data.write().await;
             let state = get_shared_state!(data);
 

@@ -1,3 +1,4 @@
+use cached::proc_macro::cached;
 use rand::{prelude::SliceRandom, thread_rng};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -6,7 +7,7 @@ use serenity::all::{
     ChannelId, Colour, Context, CreateEmbed, CreateMessage, EmbedMessageBuilding, Message,
     MessageBuilder,
 };
-use std::error::Error;
+use std::{error::Error, sync::Arc};
 
 #[derive(Serialize)]
 struct GraphQLQuery {
@@ -132,7 +133,8 @@ async fn fetch_daily_question() -> Result<ActiveDailyCodingChallengeQuestionResp
         .await
 }
 
-async fn fetch_all_questions() -> Result<ProblemsetQuestionListResponse, reqwest::Error> {
+#[cached(time = 3600)]
+async fn fetch_all_questions() -> Arc<Result<ProblemsetQuestionListResponse, reqwest::Error>> {
     let query = r#"
         query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) {
             problemsetQuestionList: questionList(
@@ -167,14 +169,19 @@ async fn fetch_all_questions() -> Result<ProblemsetQuestionListResponse, reqwest
         query: query.to_string(),
         variables: json!({"categorySlug": "", "skip": 0, "limit": 3000, "filters": {}}),
     };
-    Client::new()
+    let res = Client::new()
         .post(format!("{URL}/graphql"))
         .json(&gql_query)
         .header("Content-Type", "application/json")
         .send()
-        .await?
-        .json::<ProblemsetQuestionListResponse>()
-        .await
+        .await;
+    Arc::new(match res {
+        Ok(response) => match response.json::<ProblemsetQuestionListResponse>().await {
+            Ok(parsed_response) => Ok(parsed_response),
+            Err(err) => Err(err),
+        },
+        Err(err) => Err(err),
+    })
 }
 
 fn create_embed(question: &Question, link: String) -> CreateEmbed {
@@ -226,28 +233,30 @@ pub async fn send_random_leetcode_question_message(
     ctx: &Context,
     thread_id: ChannelId,
 ) -> Result<Message, Box<dyn Error>> {
-    let questions = fetch_all_questions()
-        .await?
-        .data
-        .problemset_question_list
-        .questions;
-    let question = questions
-        .choose(&mut thread_rng())
-        .expect("questions.len() > 0");
-    Ok(thread_id
-        .send_message(
-            ctx,
-            CreateMessage::new()
-                .content(
-                    MessageBuilder::new()
-                        .push("Here's a random question from ")
-                        .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                        .build(),
-                )
-                .embed(create_embed(
-                    question,
-                    format!("/problems/{}", question.title.replace(' ', "-")),
-                )),
-        )
-        .await?)
+    if let Ok(response) = fetch_all_questions().await.as_ref() {
+        let question = response
+            .data
+            .problemset_question_list
+            .questions
+            .choose(&mut thread_rng())
+            .expect("questions.len() > 0");
+        Ok(thread_id
+            .send_message(
+                ctx,
+                CreateMessage::new()
+                    .content(
+                        MessageBuilder::new()
+                            .push("Here's a random question from ")
+                            .push_named_link("LeetCode", "https://leetcode.com/problemset")
+                            .build(),
+                    )
+                    .embed(create_embed(
+                        question,
+                        format!("/problems/{}", question.title.replace(' ', "-")),
+                    )),
+            )
+            .await?)
+    } else {
+        Err("Failed to fetch all questions".into())
+    }
 }
