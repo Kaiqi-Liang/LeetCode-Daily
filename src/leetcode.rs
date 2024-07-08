@@ -240,9 +240,8 @@ pub async fn send_random_leetcode_question_message(
             CreateMessage::new()
                 .content(
                     MessageBuilder::new()
-                        .push("Today's ")
+                        .push("Here's a random question from ")
                         .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                        .push(" Daily question is out @everyone")
                         .build(),
                 )
                 .embed(create_embed(
