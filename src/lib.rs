@@ -1088,6 +1088,7 @@ pub async fn initialise_guild(
                     data,
                     MessageBuilder::new().push_line('\n')
                 );
+                send_random_leetcode_question_message(ctx, channel.id).await?;
                 return Ok(());
             }
         }

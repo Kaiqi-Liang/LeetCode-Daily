@@ -133,7 +133,7 @@ async fn fetch_daily_question() -> Result<ActiveDailyCodingChallengeQuestionResp
         .await
 }
 
-#[cached(time = 3600)]
+#[cached(time = 2500000)] // roughly a month
 async fn fetch_all_questions() -> Arc<Result<ProblemsetQuestionListResponse, reqwest::Error>> {
     let query = r#"
         query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) {
@@ -167,7 +167,7 @@ async fn fetch_all_questions() -> Arc<Result<ProblemsetQuestionListResponse, req
     "#;
     let gql_query = GraphQLQuery {
         query: query.to_string(),
-        variables: json!({"categorySlug": "", "skip": 0, "limit": 3000, "filters": {}}),
+        variables: json!({"categorySlug": "", "skip": 0, "limit": 5000, "filters": {}}),
     };
     let res = Client::new()
         .post(format!("{URL}/graphql"))
@@ -217,13 +217,13 @@ macro_rules! embed_message {
 
 pub async fn send_leetcode_daily_question_message(
     ctx: &Context,
-    thread_id: ChannelId,
+    channel_id: ChannelId,
 ) -> Result<Message, Box<dyn Error>> {
     let challenge = fetch_daily_question()
         .await?
         .data
         .active_daily_coding_challenge_question;
-    Ok(thread_id
+    Ok(channel_id
         .send_message(
             ctx,
             CreateMessage::new()
@@ -235,7 +235,7 @@ pub async fn send_leetcode_daily_question_message(
 
 pub async fn send_random_leetcode_question_message(
     ctx: &Context,
-    thread_id: ChannelId,
+    channel_id: ChannelId,
 ) -> Result<Message, Box<dyn Error>> {
     if let Ok(response) = fetch_all_questions().await.as_ref() {
         let question = response
@@ -244,7 +244,7 @@ pub async fn send_random_leetcode_question_message(
             .questions
             .choose(&mut thread_rng())
             .expect("questions.len() > 0");
-        Ok(thread_id
+        Ok(channel_id
             .send_message(
                 ctx,
                 CreateMessage::new()
