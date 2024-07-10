@@ -1,4 +1,6 @@
+mod helper;
 mod leetcode;
+mod messages;
 use chrono::{Datelike, Month, TimeDelta, TimeZone, Utc, Weekday};
 use leetcode::{send_leetcode_daily_question_message, send_random_leetcode_question_message};
 use regex::Regex;
@@ -62,249 +64,6 @@ impl TypeMapKey for State {
 const CUSTOM_ID: &str = "favourite_submission";
 const POLL_ERROR_MESSAGE: &str = "Poll message is not in this channel";
 const NUM_SECS_IN_AN_HOUR: u64 = chrono::Duration::minutes(60).num_seconds() as _;
-
-macro_rules! get_channel_from_guild {
-    ($guild:expr) => {
-        $guild.channel_id.ok_or("No default channel")?
-    };
-}
-
-macro_rules! get_thread_from_guild {
-    ($guild:expr) => {
-        $guild.thread_id.ok_or("No default thread")?
-    };
-}
-
-macro_rules! send_message_with_leaderboard {
-    ($ctx:ident, $guilds:expr, $guild_id:ident, $channel_id:expr, $users:expr, $message:expr) => {
-        $channel_id
-            .say(
-                &$ctx.http,
-                construct_leaderboard($users, $guilds, $guild_id, &mut $message).build(),
-            )
-            .await?
-    };
-}
-
-macro_rules! send_help_message {
-    ($ctx:ident, $message:expr, $bot:ident, $channel:expr, $default_channel:expr, $thread:expr) => {
-        $channel.say(&$ctx.http, construct_format_message!(
-        construct_channel_message!(
-            $message
-                .push("Hi I'm LeetCode Daily, here to motivate you to do ")
-                .push_named_link("LeetCode", "https://leetcode.com/problemset")
-                .push_line(" questions every single day 🤓\n\nI operate on a default channel and I create a thread in that channel when a new daily question comes out"),
-            $bot,
-            $default_channel,
-            $thread
-        )
-        .push_line("\n\nSome other commands you can run are")
-        .push_line("* `/help`: Shows this help message, can be run anywhere\n* `/random`: Send a random question, can be run anywhere\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere")
-        .push("\nTo share your code you have to put it in a spoiler tag and wrap it with ")
-        .push_safe("```code```")
-        .push_line(" so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again")
-        ).build()).await?
-    };
-}
-
-macro_rules! construct_format_message {
-    ($message:expr) => {
-        $message
-            .push("``")
-            .push_line(r"||```language")
-            .push_line("code")
-            .push("```||")
-            .push("``")
-    };
-}
-
-macro_rules! construct_badge_message {
-    ($message:expr, $month:expr) => {
-        $message.push_line(format!(
-            " for earning the {:?} Daily Challenge badge!",
-            Month::try_from(TryInto::<u8>::try_into($month.month())?)?
-        ))
-    };
-}
-
-macro_rules! send_daily_message_with_leaderboard {
-    ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr) => {
-        let channel_id = get_channel_from_guild!($data);
-        let message_id = send_leetcode_daily_question_message($ctx, channel_id)
-            .await?
-            .id;
-        create_thread_from_message!(
-            $ctx,
-            $state,
-            $guild_id,
-            $data,
-            $message,
-            channel_id,
-            message_id,
-            $data.thread_id,
-            Utc::now().format("%d/%m/%Y").to_string()
-        )
-    };
-}
-
-macro_rules! create_thread_from_message {
-    ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr, $channel_id:ident, $message_id:ident, $thread_id:expr, $thread_name:expr) => {
-        $thread_id = $channel_id
-            .create_thread_from_message(
-                &$ctx.http,
-                $message_id,
-                CreateThread::new($thread_name)
-                    .kind(ChannelType::PublicThread)
-                    .auto_archive_duration(AutoArchiveDuration::OneDay),
-            )
-            .await
-            .map(|channel| channel.id)
-            .ok();
-        send_message_with_leaderboard!(
-            $ctx,
-            &$state.guilds,
-            $guild_id,
-            $thread_id.ok_or("Failed to create thread")?,
-            &$data.users,
-            construct_format_message!(
-                $message.push("Share your solution in the format below to earn points\n")
-            )
-            .push_line('\n')
-        )
-    };
-}
-
-macro_rules! construct_congrats_message {
-    ($message:expr, $state:ident, $guild_id:ident, $user_id:ident) => {
-        $message
-            .push("Congrats to ")
-            .mention(get_user_from_id!($state.guilds, $guild_id, $user_id))
-            .push(" for ")
-    };
-}
-
-macro_rules! construct_summary_message {
-    ($message:expr, $user:ident) => {
-        $message
-            .push("\nYour current score is ")
-            .push_bold($user.score.to_string())
-            .push(". This month you have completed ")
-            .push_bold($user.monthly_record.to_string())
-            .push_line(" questions!");
-    };
-}
-
-macro_rules! construct_reward_message {
-    ($message:expr, $reward:expr) => {
-        $message
-            .push(" You have been rewarded ")
-            .push_bold($reward.to_string())
-            .push(if $reward > 1 { " points" } else { " point" })
-    };
-}
-
-macro_rules! construct_thread_message {
-    ($message:expr, $thread:expr) => {
-        if let Some(thread_id) = $thread {
-            $message.push("Today's thread is ").channel(thread_id)
-        } else {
-            $message.push("Daily is not active")
-        }
-    };
-}
-
-macro_rules! construct_channel_message {
-    ($message:expr, $bot:ident, $channel:expr, $thread:expr) => {
-        construct_thread_message!(
-            $message
-                .push("The default channel for ")
-                .mention(&$bot)
-                .push(" is ")
-                .channel($channel)
-                .push("\nYou can change it by using the following command")
-                .push_codeblock("/channel channel_id", None),
-            $thread
-        )
-    };
-}
-
-macro_rules! write_to_database {
-    ($state:ident) => {
-        $state.file.seek(SeekFrom::Start(0))?;
-        $state.file.set_len(0)?;
-        $state
-            .file
-            .write_all(serde_json::to_string_pretty(&$state.database)?.as_bytes())?
-    };
-}
-
-macro_rules! get_shared_state {
-    ($data:ident) => {{
-        $data
-            .get_mut::<State>()
-            .ok_or("Failed to get share data from context")?
-    }};
-}
-
-macro_rules! get_user_from_id {
-    ($guilds:expr, $guild_id:ident, $user_id:ident) => {
-        $guilds
-            .get($guild_id)
-            .expect("Guild does not exist")
-            .get($user_id)
-            .expect("User does not exist")
-    };
-    ($users:expr, $user_id:expr) => {
-        $users.entry($user_id).or_insert(Status::default())
-    };
-}
-
-macro_rules! get_guild_from_id {
-    ($state:ident, $guild_id:ident) => {
-        &mut $state
-            .database
-            .get_mut(&$guild_id)
-            .ok_or("Guild does not exist in database")?
-    };
-}
-
-macro_rules! acknowledge_interaction {
-    ($ctx:ident, $component:ident, $content:expr) => {
-        $component
-            .create_response(
-                &$ctx.http,
-                CreateInteractionResponse::Message(
-                    CreateInteractionResponseMessage::new()
-                        .content($content)
-                        .ephemeral(true),
-                ),
-            )
-            .await
-            .map_err(|e| e.into())
-    };
-}
-
-macro_rules! send_invalid_channel_id_message {
-    ($ctx:ident, $msg:ident) => {
-        $msg.channel_id
-            .say(&$ctx.http, "Invalid channel ID")
-            .await?;
-    };
-}
-
-macro_rules! send_channel_usage_message {
-    ($ctx:ident, $channel:expr) => {
-        $channel
-            .say(
-                &$ctx.http,
-                MessageBuilder::new()
-                    .push("Usage:")
-                    .push_codeblock("/channel channel_id", None)
-                    .build(),
-            )
-            .await?;
-    };
-}
 
 pub async fn save_to_database(ctx: Context) -> Result<(), Box<dyn Error>> {
     let mut data = ctx.data.write().await;
@@ -412,9 +171,10 @@ async fn initialise_guilds(
 }
 
 pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
-    println!("[{}] Setting up guilds {:?}", Utc::now(), ready.guilds);
+    let guilds = ready.guilds;
+    log!("Setting up guilds {guilds:?}");
     let mut data = ctx.data.write().await;
-    for guild in ready.guilds {
+    for guild in guilds {
         initialise_guilds(ctx, &guild.id, get_shared_state!(data)).await?;
     }
     Ok(())
@@ -423,7 +183,7 @@ pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
 pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>> {
     loop {
         let mut duration: u64 = time_till_utc_midnight()?.num_seconds().try_into()?;
-        println!("[{}] {duration} seconds until next daily", Utc::now());
+        log!("{duration} seconds until next daily");
         if duration > NUM_SECS_IN_AN_HOUR {
             sleep(Duration::from_secs(duration - NUM_SECS_IN_AN_HOUR)).await;
             duration = NUM_SECS_IN_AN_HOUR;
@@ -572,10 +332,7 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
             } + same_day_until_contest_start)
                 .try_into()?,
         );
-        println!(
-            "[{}] {num_days_from_sunday} days / {duration:?} until next contest",
-            Utc::now(),
-        );
+        log!("{num_days_from_sunday} days / {duration:?} until next contest");
         sleep(duration).await;
         {
             let mut data = ctx.data.write().await;

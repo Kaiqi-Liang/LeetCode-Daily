@@ -1,7 +1,7 @@
 use chrono::Utc;
 use leetcode_daily::{
-    initialise_guild, respond, save_to_database, schedule_daily_question, schedule_weekly_contest,
-    setup, vote, SharedState, State,
+    initialise_guild, log, respond, save_to_database, schedule_daily_question,
+    schedule_weekly_contest, setup, vote, SharedState, State,
 };
 use serenity::{async_trait, model::prelude::*, prelude::*};
 use std::{collections::HashMap, env::var, error::Error, fs::OpenOptions, io::Read};
@@ -14,29 +14,29 @@ impl EventHandler for Handler {
         let bot = ctx.cache.current_user().id;
         if _is_new == Some(true) {
             if let Err(why) = initialise_guild(&ctx, guild, bot).await {
-                println!("[{}] Error initialising guild {why}", Utc::now());
+                log!("Error initialising guild {why}");
             }
             if let Err(why) = save_to_database(ctx).await {
-                println!("[{}] Error saving to database {why}", Utc::now());
+                log!("Error saving to database {why}");
             }
         }
     }
 
     async fn ready(&self, ctx: Context, ready: Ready) {
         if let Err(why) = setup(&ctx, ready).await {
-            println!("[{}] Error setting up {why}", Utc::now());
+            log!("Error setting up {why}");
         }
         {
             let ctx = ctx.clone();
             spawn(async move {
                 if let Err(why) = schedule_daily_question(&ctx).await {
-                    println!("[{}] Error scheduling {why}", Utc::now());
+                    log!("Error scheduling {why}");
                 }
             });
         }
         spawn(async move {
             if let Err(why) = schedule_weekly_contest(&ctx).await {
-                println!("[{}] Error scheduling {why}", Utc::now());
+                log!("Error scheduling {why}");
             }
         });
     }
@@ -45,23 +45,20 @@ impl EventHandler for Handler {
         let bot = ctx.cache.current_user().id;
         if msg.author.id != bot {
             if let Err(why) = respond(&ctx, msg, bot).await {
-                println!("[{}] Error responding to messages {why}", Utc::now());
+                log!("Error responding to messages {why}");
             }
             if let Err(why) = save_to_database(ctx).await {
-                println!("[{}] Error saving to database {why}", Utc::now());
+                log!("Error saving to database {why}");
             }
         }
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if let Err(why) = vote(&ctx, interaction).await {
-            println!(
-                "[{}] Error responding to vote interaction {why}",
-                Utc::now(),
-            );
+            log!("Error responding to vote interaction {why}");
         }
         if let Err(why) = save_to_database(ctx).await {
-            println!("[{}] Error saving to database {why}", Utc::now());
+            log!("Error saving to database {why}");
         }
     }
 }
