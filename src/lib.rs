@@ -100,7 +100,7 @@ macro_rules! send_help_message {
         )
         .push_line("\n\nSome other commands you can run are")
         .push_line("* `/help`: Shows this help message, can be run anywhere\n* `/random`: Send a random question, can be run anywhere\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere")
-        .push("\nTo submit your code you have to put it in a spoiler tag and wrap it with ")
+        .push("\nTo share your code you have to put it in a spoiler tag and wrap it with ")
         .push_safe("```code```")
         .push_line(" so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again")
         ).build()).await?
@@ -167,7 +167,7 @@ macro_rules! create_thread_from_message {
             $thread_id.ok_or("Failed to create thread")?,
             &$data.users,
             construct_format_message!(
-                $message.push("Share your code in the format below to submit your solution\n")
+                $message.push("Share your solution in the format below to earn points\n")
             )
             .push_line('\n')
         )
@@ -572,7 +572,10 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
             } + same_day_until_contest_start)
                 .try_into()?,
         );
-        println!("{num_days_from_sunday} days / {duration:?} until next contest");
+        println!(
+            "[{}] {num_days_from_sunday} days / {duration:?} until next contest",
+            Utc::now(),
+        );
         sleep(duration).await;
         {
             let mut data = ctx.data.write().await;
@@ -790,9 +793,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
         } else if code_block.is_match(&msg.content) {
             if data.active_daily && msg.channel_id == data.thread_id.unwrap_or_default() {
                 let user = get_user_from_id!(data.users, *user_id);
-                if user.submitted.is_some() {
-                    message.push("You have already submitted today");
-                } else {
+                if user.submitted.is_none() {
                     user.submitted = Some(msg.link());
                     let score: usize =
                         (time_till_utc_midnight()?.num_hours() / 10 + 1).try_into()?;
@@ -1024,7 +1025,7 @@ pub async fn vote(ctx: &Context, interaction: Interaction) -> Result<(), Box<dyn
                     ctx,
                     component,
                     format!(
-                        "Successfully submitted your vote for {}",
+                        "Successfully voted for {}",
                         get_user_from_id!(state.guilds, guild_id, voted_for)
                     )
                 );

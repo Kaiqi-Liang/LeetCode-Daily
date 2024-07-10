@@ -20,7 +20,7 @@ Some other commands you can run are
 * `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread
 * `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere
 
-To submit your code you have to put it a spoiler tag and wrap it with \```code\``` so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again
+To share your code you have to put it a spoiler tag and wrap it with \```code\``` so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again
 
 ```discord
 ||```language
