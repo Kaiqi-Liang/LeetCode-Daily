@@ -81,25 +81,12 @@ macro_rules! acknowledge_interaction {
 }
 
 #[macro_export]
-macro_rules! send_invalid_channel_id_message {
-    ($ctx:ident, $msg:ident) => {
-        $msg.channel_id
-            .say(&$ctx.http, "Invalid channel ID")
-            .await?;
-    };
-}
-
-#[macro_export]
-macro_rules! send_channel_usage_message {
-    ($ctx:ident, $channel:expr) => {
-        $channel
-            .say(
-                &$ctx.http,
-                MessageBuilder::new()
-                    .push("Usage:")
-                    .push_codeblock("/channel channel_id", None)
-                    .build(),
-            )
-            .await?;
+macro_rules! get_active {
+    ($data:ident, $arg:expr) => {
+        if $arg == "weekly" {
+            &mut $data.active_weekly
+        } else {
+            &mut $data.active_daily
+        }
     };
 }

@@ -76,6 +76,30 @@ macro_rules! send_daily_message_with_leaderboard {
 }
 
 #[macro_export]
+macro_rules! send_invalid_channel_id_message {
+    ($ctx:ident, $msg:ident) => {
+        $msg.channel_id
+            .say(&$ctx.http, "Invalid channel ID")
+            .await?;
+    };
+}
+
+#[macro_export]
+macro_rules! send_channel_usage_message {
+    ($ctx:ident, $channel:expr) => {
+        $channel
+            .say(
+                &$ctx.http,
+                MessageBuilder::new()
+                    .push("Usage:")
+                    .push_codeblock("/channel channel_id", None)
+                    .build(),
+            )
+            .await?;
+    };
+}
+
+#[macro_export]
 macro_rules! create_thread_from_message {
     ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr, $channel_id:ident, $message_id:ident, $thread_id:expr, $thread_name:expr) => {
         $thread_id = $channel_id
@@ -159,5 +183,17 @@ macro_rules! construct_channel_message {
                 .push_codeblock("/channel channel_id", None),
             $thread
         )
+    };
+}
+
+#[macro_export]
+macro_rules! construct_active_message {
+    ($message:ident, $active:ident, $arg:expr, $bot:ident, $now:expr) => {
+        Some($message.mention(&$bot).push(format!(
+            " is {}{} for {}",
+            if $now { "now " } else { "" },
+            if *$active { "active" } else { "paused" },
+            $arg
+        )))
     };
 }

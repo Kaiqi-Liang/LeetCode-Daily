@@ -454,25 +454,18 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                             }
                         }
                         2 => {
-                            if args[0] != "/active" || args[1] != "weekly" || args[1] != "daily" {
+                            if args[0] != "/active" || (args[1] != "weekly" && args[1] != "daily") {
                                 None
                             } else {
-                                Some(
-                                    message
-                                        .mention(&bot)
-                                        .push(format!(" is active for {}", args[1])),
-                                )
+                                let active = get_active!(data, args[1]);
+                                construct_active_message!(message, active, args[1], bot, false)
                             }
                         }
                         3 => {
                             if args[0] != "/active" && args[2] != "toggle" {
                                 None
                             } else if args[1] == "weekly" || args[1] == "daily" {
-                                let active = if args[1] == "weekly" {
-                                    &mut data.active_weekly
-                                } else {
-                                    &mut data.active_daily
-                                };
+                                let active = get_active!(data, args[1]);
                                 *active = !*active;
                                 if args[1] == "daily" && *active && data.thread_id.is_none() {
                                     send_daily_message_with_leaderboard!(
@@ -483,11 +476,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                         &mut MessageBuilder::new()
                                     );
                                 }
-                                Some(message.mention(&bot).push(format!(
-                                    " is now {} for {}",
-                                    if *active { "active" } else { "paused" },
-                                    args[1]
-                                )))
+                                construct_active_message!(message, active, args[1], bot, true)
                             } else {
                                 None
                             }
