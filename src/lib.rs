@@ -51,6 +51,7 @@ struct Status {
 }
 
 pub struct SharedState {
+    pub ready: bool,
     pub guilds: Guilds,
     pub file: File,
     pub database: Database,
@@ -174,8 +175,14 @@ pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
     let guilds = ready.guilds;
     log!("Setting up guilds {guilds:?}");
     let mut data = ctx.data.write().await;
+    let state = get_shared_state!(data);
+    if !state.ready {
+        state.ready = true;
+    } else {
+        return Err("Already setup".into());
+    }
     for guild in guilds {
-        initialise_guilds(ctx, &guild.id, get_shared_state!(data)).await?;
+        initialise_guilds(ctx, &guild.id, state).await?;
     }
     Ok(())
 }

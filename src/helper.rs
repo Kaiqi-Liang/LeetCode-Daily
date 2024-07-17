@@ -1,4 +1,16 @@
 #[macro_export]
+macro_rules! schedule_thread {
+    ($ctx:ident, $schedule:ident) => {{
+        let ctx = $ctx.clone();
+        spawn(async move {
+            if let Err(why) = $schedule(&ctx).await {
+                log!("Error scheduling {why}");
+            }
+        });
+    }};
+}
+
+#[macro_export]
 macro_rules! log {
     ($message:expr) => {
         println!("[{}] {}", Utc::now(), format!($message));

@@ -1,6 +1,6 @@
 use chrono::Utc;
 use leetcode_daily::{
-    initialise_guild, log, respond, save_to_database, schedule_daily_question,
+    initialise_guild, log, respond, save_to_database, schedule_daily_question, schedule_thread,
     schedule_weekly_contest, setup, vote, SharedState, State,
 };
 use serenity::{async_trait, model::prelude::*, prelude::*};
@@ -25,20 +25,10 @@ impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         if let Err(why) = setup(&ctx, ready).await {
             log!("Error setting up {why}");
+        } else {
+            schedule_thread!(ctx, schedule_daily_question);
+            schedule_thread!(ctx, schedule_weekly_contest);
         }
-        {
-            let ctx = ctx.clone();
-            spawn(async move {
-                if let Err(why) = schedule_daily_question(&ctx).await {
-                    log!("Error scheduling {why}");
-                }
-            });
-        }
-        spawn(async move {
-            if let Err(why) = schedule_weekly_contest(&ctx).await {
-                log!("Error scheduling {why}");
-            }
-        });
     }
 
     async fn message(&self, ctx: Context, msg: Message) {
@@ -85,6 +75,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         file.read_to_string(&mut contents)?;
         let mut data = client.data.write().await;
         data.insert::<State>(SharedState {
+            ready: false,
             guilds: HashMap::new(),
             file,
             database: serde_json::from_str(&contents)?,
