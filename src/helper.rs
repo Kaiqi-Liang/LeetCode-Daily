@@ -4,7 +4,7 @@ macro_rules! schedule_thread {
         let ctx = $ctx.clone();
         spawn(async move {
             if let Err(why) = $schedule(&ctx).await {
-                log!("Error scheduling {why}");
+                log!("Error scheduling: {why}");
             }
         });
     }};

@@ -172,15 +172,15 @@ async fn initialise_guilds(
 }
 
 pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
-    let guilds = ready.guilds;
-    log!("Setting up guilds {guilds:?}");
     let mut data = ctx.data.write().await;
     let state = get_shared_state!(data);
     if !state.ready {
         state.ready = true;
     } else {
-        return Err("Already setup".into());
+        return Err("Already done setup".into());
     }
+    let guilds = ready.guilds;
+    log!("Setting up guilds {guilds:?}");
     for guild in guilds {
         initialise_guilds(ctx, &guild.id, state).await?;
     }
