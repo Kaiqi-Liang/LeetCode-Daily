@@ -248,40 +248,50 @@ pub async fn send_random_leetcode_question_message(
             .iter()
             .filter(|question| {
                 filters.iter().all(|&filter| {
-                    if filter == "free" {
+                    if filter == "free" || filter == "!paid" {
                         !question.paid_only
-                    } else if filter == "paid" {
+                    } else if filter == "paid" || filter == "!free" {
                         question.paid_only
                     } else if ["easy", "medium", "hard"].contains(&filter) {
                         question.difficulty.to_lowercase() == filter
+                    } else if ["!easy", "!medium", "!hard"].contains(&filter) {
+                        question.difficulty.to_lowercase()
+                            != filter.chars().skip(1).collect::<String>()
                     } else {
                         false
                     }
                 })
             })
             .collect::<Vec<_>>();
-        let question = questions
-            .choose(&mut thread_rng())
-            .ok_or("No questions to select from")?;
-        let message_id = channel_id
-            .send_message(
+        let question = questions.choose(&mut thread_rng());
+        if let Some(question) = question {
+            let message_id = channel_id
+                .send_message(
+                    ctx,
+                    CreateMessage::new()
+                        .content(embed_message!("Here's a random", "question"))
+                        .embed(create_embed(
+                            question,
+                            format!(
+                                "/problems/{}",
+                                question.title.replace(' ', "-").replace('\'', "")
+                            ),
+                        )),
+                )
+                .await?
+                .id;
+            create_thread_from_message!(
                 ctx,
-                CreateMessage::new()
-                    .content(embed_message!("Here's a random", "question"))
-                    .embed(create_embed(
-                        question,
-                        format!("/problems/{}", question.title.replace(' ', "-")),
-                    )),
-            )
-            .await?
-            .id;
-        create_thread_from_message!(
-            ctx,
-            MessageBuilder::new(),
-            channel_id,
-            message_id,
-            question.title.clone()
-        );
+                MessageBuilder::new(),
+                channel_id,
+                message_id,
+                question.title.clone()
+            );
+        } else {
+            channel_id
+                .say(ctx, "No question found that fits your requirement")
+                .await?;
+        }
         Ok(())
     } else {
         Err("Failed to fetch all questions".into())
