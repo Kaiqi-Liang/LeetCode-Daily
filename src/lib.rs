@@ -522,11 +522,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 msg.content.split(' ').skip(1).collect::<Vec<_>>(),
             )
             .await?;
-        } else if msg.content.starts_with("/top")
-            && (msg.channel_id == channel
-                || msg.channel_id == data.thread_id.unwrap_or_default()
-                || msg.channel_id == data.weekly_id.unwrap_or_default())
-        {
+        } else if msg.content.starts_with("/top") {
             let top = msg.content.split(' ').nth(1);
             let mut leaderboard = Vec::new();
             for data in state.database.values() {
@@ -575,11 +571,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 message.push("No one has done any questions yet");
             }
             msg.channel_id.say(ctx, message.build()).await?;
-        } else if msg.content == "/scores"
-            && (msg.channel_id == channel
-                || msg.channel_id == data.thread_id.unwrap_or_default()
-                || msg.channel_id == data.weekly_id.unwrap_or_default())
-        {
+        } else if msg.content == "/scores" {
             send_message_with_leaderboard!(
                 ctx,
                 &state.guilds,

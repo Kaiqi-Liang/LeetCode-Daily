@@ -25,13 +25,13 @@ macro_rules! send_help_message {
         )
         .push("\n\nSome other commands you can run are")
         .push_line("\
-            * `/help`: Shows this help message, can be run anywhere\n\
-            * `/random [free | paid | easy | medium | hard] ...`: Send a random question with optional fields to filter by difficulty or whether it is subscription only, can be run anywhere but if not run in a thread it will create a thread for it\n\
-            * `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channe\n\
-            * `/top [number]`: Shows the top 3 or any number up to 10 scores and monthly records across all servers, has to be run in the current thread\n\
-            * `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n\
-            * `/daily`: Resend the daily remainder, can be run anywhere\n\
-            * `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere\n\
+            * `/help`: Shows this help message
+            * `/random [free | paid | easy | medium | hard] ...`: Send a random question with optional fields to filter by difficulty or whether it is subscription only, if not run in a thread it will create a thread for it
+            * `/scores`: Shows the current leaderboard
+            * `/top [number]`: Shows the top 3 or any number up to 10 scores and monthly records across all servers
+            * `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current daily thread
+            * `/daily`: Resend the daily remainder
+            * `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off
         ")
         .push("To share your code you have to put it in a spoiler tag and wrap it with ")
         .push_safe("```code```")
