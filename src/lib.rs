@@ -518,50 +518,53 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 || msg.channel_id == data.weekly_id.unwrap_or_default())
         {
             let top = msg.content.split(' ').nth(1);
+            let mut leaderboard = Vec::new();
             for data in state.database.values() {
-                let mut leaderboard = data
-                    .users
-                    .values()
-                    .map(|users| (users.score, users.monthly_record))
-                    .collect::<Vec<_>>();
-                leaderboard.sort_by(|a, b| {
-                    let cmp = b.0.cmp(&a.0);
-                    if let Ordering::Equal = cmp {
-                        b.1.cmp(&a.1)
-                    } else {
-                        cmp
-                    }
-                });
-                let mut has_score = false;
-                for (place, (score, monthly_record)) in leaderboard
-                    .into_iter()
-                    .take(top.unwrap_or("3").parse::<usize>()?.min(10))
-                    .enumerate()
-                {
-                    if score > 0 || monthly_record > 0 {
-                        has_score = true;
-                        message
-                            .push(format!("{}. ", place + 1))
-                            .push_bold(score.to_string())
-                            .push(if score > 1 {
-                                " points and "
-                            } else {
-                                " point and "
-                            })
-                            .push_bold(monthly_record.to_string())
-                            .push(if monthly_record > 1 {
-                                " questions"
-                            } else {
-                                " question"
-                            })
-                            .push_line(" completed this month");
-                    }
-                }
-                if !has_score {
-                    message.push("No one has done any questions yet");
-                }
-                msg.channel_id.say(ctx, message.build()).await?;
+                leaderboard.append(
+                    &mut data
+                        .users
+                        .values()
+                        .map(|users| (users.score, users.monthly_record))
+                        .collect::<Vec<_>>(),
+                );
             }
+            leaderboard.sort_by(|a, b| {
+                let cmp = b.0.cmp(&a.0);
+                if let Ordering::Equal = cmp {
+                    b.1.cmp(&a.1)
+                } else {
+                    cmp
+                }
+            });
+            let mut has_score = false;
+            for (place, (score, monthly_record)) in leaderboard
+                .into_iter()
+                .take(top.unwrap_or("3").parse::<usize>()?.min(10))
+                .enumerate()
+            {
+                if score > 0 || monthly_record > 0 {
+                    has_score = true;
+                    message
+                        .push(format!("{}. ", place + 1))
+                        .push_bold(score.to_string())
+                        .push(if score > 1 {
+                            " points and "
+                        } else {
+                            " point and "
+                        })
+                        .push_bold(monthly_record.to_string())
+                        .push(if monthly_record > 1 {
+                            " questions"
+                        } else {
+                            " question"
+                        })
+                        .push_line(" completed this month");
+                }
+            }
+            if !has_score {
+                message.push("No one has done any questions yet");
+            }
+            msg.channel_id.say(ctx, message.build()).await?;
         } else if msg.content == "/scores"
             && (msg.channel_id == channel
                 || msg.channel_id == data.thread_id.unwrap_or_default()
@@ -864,55 +867,59 @@ pub async fn initialise_guild(
 ) -> Result<(), Box<dyn Error>> {
     let mut data = ctx.data.write().await;
     let state = get_shared_state!(data);
-    let mut data = Data {
-        users: guild
-            .id
-            .members(&ctx.http, None, None)
-            .await?
-            .into_iter()
-            .filter_map(|member| {
-                let user = member.user;
-                if user.bot {
-                    None
-                } else {
-                    Some((
-                        user.id,
-                        Status {
-                            voted_for: None,
-                            submitted: None,
-                            weekly_submissions: 0,
-                            monthly_record: 0,
-                            score: 0,
-                        },
-                    ))
-                }
-            })
-            .collect(),
-        channel_id: None,
-        thread_id: None,
-        weekly_id: None,
-        poll_id: None,
-        active_weekly: true,
-        active_daily: true,
-    };
-    for channel in guild.channels.values() {
-        if channel.kind == ChannelType::Text {
-            data.channel_id = Some(channel.id);
-            let guild_id = &guild.id;
-            initialise_guilds(ctx, guild_id, state).await?;
-            let mut message = MessageBuilder::new();
-            send_help_message!(ctx, message, bot, channel, channel.id, data.thread_id);
-            send_daily_message_with_leaderboard!(
-                ctx,
-                state,
-                guild_id,
-                data,
-                MessageBuilder::new().push_line('\n')
-            );
-            send_random_leetcode_question_message(ctx, channel.id, vec![]).await?;
-            state.database.insert(*guild_id, data);
-            return Ok(());
+    if !state.database.contains_key(&guild.id) {
+        let mut data = Data {
+            users: guild
+                .id
+                .members(&ctx.http, None, None)
+                .await?
+                .into_iter()
+                .filter_map(|member| {
+                    let user = member.user;
+                    if user.bot {
+                        None
+                    } else {
+                        Some((
+                            user.id,
+                            Status {
+                                voted_for: None,
+                                submitted: None,
+                                weekly_submissions: 0,
+                                monthly_record: 0,
+                                score: 0,
+                            },
+                        ))
+                    }
+                })
+                .collect(),
+            channel_id: None,
+            thread_id: None,
+            weekly_id: None,
+            poll_id: None,
+            active_weekly: true,
+            active_daily: true,
+        };
+        for channel in guild.channels.values() {
+            if channel.kind == ChannelType::Text {
+                data.channel_id = Some(channel.id);
+                let guild_id = &guild.id;
+                initialise_guilds(ctx, guild_id, state).await?;
+                let mut message = MessageBuilder::new();
+                send_help_message!(ctx, message, bot, channel, channel.id, data.thread_id);
+                send_daily_message_with_leaderboard!(
+                    ctx,
+                    state,
+                    guild_id,
+                    data,
+                    MessageBuilder::new().push_line('\n')
+                );
+                send_random_leetcode_question_message(ctx, channel.id, vec![]).await?;
+                state.database.insert(*guild_id, data);
+                return Ok(());
+            }
         }
+        Err("No available channel".into())
+    } else {
+        Ok(())
     }
-    Err("No available channel".into())
 }
