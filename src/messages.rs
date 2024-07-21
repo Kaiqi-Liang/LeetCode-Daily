@@ -101,8 +101,8 @@ macro_rules! send_channel_usage_message {
 
 #[macro_export]
 macro_rules! create_thread_from_message {
-    ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr, $channel_id:ident, $message_id:ident, $thread_id:expr, $thread_name:expr) => {
-        $thread_id = $channel_id
+    ($ctx:ident, $message:expr, $channel_id:ident, $message_id:ident, $thread_name:expr) => {
+        $channel_id
             .create_thread_from_message(
                 &$ctx.http,
                 $message_id,
@@ -112,7 +112,11 @@ macro_rules! create_thread_from_message {
             )
             .await
             .map(|channel| channel.id)
-            .ok();
+            .ok()
+    };
+    ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr, $channel_id:ident, $message_id:ident, $thread_id:expr, $thread_name:expr) => {
+        $thread_id =
+            create_thread_from_message!($ctx, $message, $channel_id, $message_id, $thread_name);
         send_message_with_leaderboard!(
             $ctx,
             &$state.guilds,

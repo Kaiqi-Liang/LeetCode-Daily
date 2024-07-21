@@ -4,10 +4,12 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serenity::all::{
-    ChannelId, Colour, Context, CreateEmbed, CreateMessage, EmbedMessageBuilding, Message,
-    MessageBuilder,
+    AutoArchiveDuration, ChannelId, ChannelType, Colour, Context, CreateEmbed, CreateMessage,
+    CreateThread, EmbedMessageBuilding, Message, MessageBuilder,
 };
 use std::{error::Error, sync::Arc};
+
+use crate::create_thread_from_message;
 
 #[derive(Serialize)]
 struct GraphQLQuery {
@@ -236,7 +238,7 @@ pub async fn send_leetcode_daily_question_message(
 pub async fn send_random_leetcode_question_message(
     ctx: &Context,
     channel_id: ChannelId,
-) -> Result<Message, Box<dyn Error>> {
+) -> Result<(), Box<dyn Error>> {
     if let Ok(response) = fetch_all_questions().await.as_ref() {
         let question = response
             .data
@@ -244,7 +246,7 @@ pub async fn send_random_leetcode_question_message(
             .questions
             .choose(&mut thread_rng())
             .expect("questions.len() > 0");
-        Ok(channel_id
+        let message_id = channel_id
             .send_message(
                 ctx,
                 CreateMessage::new()
@@ -254,7 +256,16 @@ pub async fn send_random_leetcode_question_message(
                         format!("/problems/{}", question.title.replace(' ', "-")),
                     )),
             )
-            .await?)
+            .await?
+            .id;
+        create_thread_from_message!(
+            ctx,
+            MessageBuilder::new(),
+            channel_id,
+            message_id,
+            question.title.clone()
+        );
+        Ok(())
     } else {
         Err("Failed to fetch all questions".into())
     }

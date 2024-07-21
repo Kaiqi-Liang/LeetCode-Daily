@@ -174,17 +174,17 @@ async fn initialise_guilds(
 pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
     let mut data = ctx.data.write().await;
     let state = get_shared_state!(data);
-    if !state.ready {
-        state.ready = true;
+    if state.ready {
+        Err("Already done setup".into())
     } else {
-        return Err("Already done setup".into());
+        state.ready = true;
+        let guilds = ready.guilds;
+        log!("Setting up guilds {guilds:?}");
+        for guild in guilds {
+            initialise_guilds(ctx, &guild.id, state).await?;
+        }
+        Ok(())
     }
-    let guilds = ready.guilds;
-    log!("Setting up guilds {guilds:?}");
-    for guild in guilds {
-        initialise_guilds(ctx, &guild.id, state).await?;
-    }
-    Ok(())
 }
 
 pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>> {
