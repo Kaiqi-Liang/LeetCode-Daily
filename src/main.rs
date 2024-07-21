@@ -8,6 +8,7 @@ use std::{collections::HashMap, env::var, error::Error, fs::OpenOptions, io::Rea
 use tokio::{main, spawn};
 
 struct Handler;
+
 #[async_trait]
 impl EventHandler for Handler {
     async fn guild_create(&self, ctx: Context, guild: Guild, _is_new: Option<bool>) {

@@ -94,7 +94,7 @@ const URL: &str = "https://leetcode.com";
 
 async fn fetch_daily_question() -> Result<ActiveDailyCodingChallengeQuestionResponse, reqwest::Error>
 {
-    let query = r#"
+    let query = "
         query questionOfToday {
             activeDailyCodingChallengeQuestion {
                 date
@@ -120,7 +120,7 @@ async fn fetch_daily_question() -> Result<ActiveDailyCodingChallengeQuestionResp
                 }
             }
         }
-    "#;
+    ";
     let gql_query = GraphQLQuery {
         query: query.to_string(),
         variables: serde_json::Value::default(),
@@ -137,7 +137,7 @@ async fn fetch_daily_question() -> Result<ActiveDailyCodingChallengeQuestionResp
 
 #[cached(time = 2500000)] // roughly a month
 async fn fetch_all_questions() -> Arc<Result<ProblemsetQuestionListResponse, reqwest::Error>> {
-    let query = r#"
+    let query = "
         query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) {
             problemsetQuestionList: questionList(
                 categorySlug: $categorySlug
@@ -166,7 +166,7 @@ async fn fetch_all_questions() -> Arc<Result<ProblemsetQuestionListResponse, req
                 }
             }
         }
-    "#;
+    ";
     let gql_query = GraphQLQuery {
         query: query.to_string(),
         variables: json!({"categorySlug": "", "skip": 0, "limit": 5000, "filters": {}}),
@@ -274,7 +274,12 @@ pub async fn send_random_leetcode_question_message(
                             question,
                             format!(
                                 "/problems/{}",
-                                question.title.replace(' ', "-").replace('\'', "")
+                                question
+                                    .title
+                                    .replace(' ', "-")
+                                    .chars()
+                                    .filter(|&ch| ch.is_alphanumeric() || ch == '-')
+                                    .collect::<String>()
                             ),
                         )),
                 )
