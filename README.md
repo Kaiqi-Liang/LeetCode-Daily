@@ -15,7 +15,7 @@ You can change it by running the following command
 Some other commands you can run are
 
 * `/help`: Shows this help message, can be run anywhere
-* `/random`: Send a random question, can be run anywhere
+* `/random [free | paid | easy | medium | hard]`: Send a random question with optional fields to filter by difficulty or whether it is subscription only, can be run anywhere but if not run in a thread it will create a thread for it
 * `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel
 * `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread
 * `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere

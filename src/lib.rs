@@ -501,8 +501,13 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 .await?;
         } else if msg.content == "/help" {
             send_help_message!(ctx, message, bot, msg.channel_id, channel, data.thread_id);
-        } else if msg.content == "/random" {
-            send_random_leetcode_question_message(ctx, msg.channel_id).await?;
+        } else if msg.content.starts_with("/random") {
+            send_random_leetcode_question_message(
+                ctx,
+                msg.channel_id,
+                msg.content.split(' ').skip(1).collect::<Vec<_>>(),
+            )
+            .await?;
         } else if msg.content == "/scores"
             && (msg.channel_id == channel
                 || msg.channel_id == data.thread_id.unwrap_or_default()
@@ -842,7 +847,7 @@ pub async fn initialise_guild(
                     data,
                     MessageBuilder::new().push_line('\n')
                 );
-                send_random_leetcode_question_message(ctx, channel.id).await?;
+                send_random_leetcode_question_message(ctx, channel.id, vec![]).await?;
                 return Ok(());
             }
         }

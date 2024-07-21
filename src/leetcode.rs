@@ -238,14 +238,31 @@ pub async fn send_leetcode_daily_question_message(
 pub async fn send_random_leetcode_question_message(
     ctx: &Context,
     channel_id: ChannelId,
+    filters: Vec<&str>,
 ) -> Result<(), Box<dyn Error>> {
     if let Ok(response) = fetch_all_questions().await.as_ref() {
-        let question = response
+        let questions = response
             .data
             .problemset_question_list
             .questions
+            .iter()
+            .filter(|question| {
+                filters.iter().all(|&filter| {
+                    if filter == "free" {
+                        !question.paid_only
+                    } else if filter == "paid" {
+                        question.paid_only
+                    } else if ["easy", "medium", "hard"].contains(&filter) {
+                        question.difficulty.to_lowercase() == filter
+                    } else {
+                        false
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        let question = questions
             .choose(&mut thread_rng())
-            .expect("questions.len() > 0");
+            .ok_or("No questions to select from")?;
         let message_id = channel_id
             .send_message(
                 ctx,

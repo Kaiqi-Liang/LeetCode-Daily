@@ -24,7 +24,7 @@ macro_rules! send_help_message {
             $thread
         )
         .push_line("\n\nSome other commands you can run are")
-        .push_line("* `/help`: Shows this help message, can be run anywhere\n* `/random`: Send a random question, can be run anywhere\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere")
+        .push_line("* `/help`: Shows this help message, can be run anywhere\n* `/random [free | paid | easy | medium | hard]`: Send a random question with optional fields to filter by difficulty or whether it is subscription only, can be run anywhere but if not run in a thread it will create a thread for it\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere")
         .push("\nTo share your code you have to put it in a spoiler tag and wrap it with ")
         .push_safe("```code```")
         .push_line(" so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again")
