@@ -23,9 +23,18 @@ macro_rules! send_help_message {
             $default_channel,
             $thread
         )
-        .push_line("\n\nSome other commands you can run are")
-        .push_line("* `/help`: Shows this help message, can be run anywhere\n* `/random [free | paid | easy | medium | hard] ...`: Send a random question with optional fields to filter by difficulty or whether it is subscription only, can be run anywhere but if not run in a thread it will create a thread for it\n* `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel\n* `/top [number]`: Shows the top 3 or any number up to 10 scores and monthly records across all servers, has to be run in the current thread\n* `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n* `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere")
-        .push("\nTo share your code you have to put it in a spoiler tag and wrap it with ")
+        .push("\n\nSome other commands you can run are")
+        .push_line("\
+            * `/help`: Shows this help message, can be run anywhere\n\
+            * `/reset`: Reset the database for this discord server, can be run anywhere\n\
+            * `/random [free | paid | easy | medium | hard] ...`: Send a random question with optional fields to filter by difficulty or whether it is subscription only, can be run anywhere but if not run in a thread it will create a thread for it\n\
+            * `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channe\n\
+            * `/top [number]`: Shows the top 3 or any number up to 10 scores and monthly records across all servers, has to be run in the current thread\n\
+            * `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread\n\
+            * `/daily`: Resend the daily remainder, can be run anywhere\n\
+            * `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere\n\
+        ")
+        .push("To share your code you have to put it in a spoiler tag and wrap it with ")
         .push_safe("```code```")
         .push_line(" so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again")
         ).build()).await?
@@ -58,6 +67,7 @@ macro_rules! construct_badge_message {
 macro_rules! send_daily_message_with_leaderboard {
     ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr) => {
         let channel_id = get_channel_from_guild!($data);
+        $data.poll_id = None;
         let message_id = send_leetcode_daily_question_message($ctx, channel_id)
             .await?
             .id;
@@ -101,7 +111,7 @@ macro_rules! send_channel_usage_message {
 
 #[macro_export]
 macro_rules! create_thread_from_message {
-    ($ctx:ident, $message:expr, $channel_id:ident, $message_id:ident, $thread_name:expr) => {
+    ($ctx:ident, $channel_id:ident, $message_id:ident, $thread_name:expr) => {
         $channel_id
             .create_thread_from_message(
                 &$ctx.http,
@@ -115,8 +125,7 @@ macro_rules! create_thread_from_message {
             .ok()
     };
     ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr, $channel_id:ident, $message_id:ident, $thread_id:expr, $thread_name:expr) => {
-        $thread_id =
-            create_thread_from_message!($ctx, $message, $channel_id, $message_id, $thread_name);
+        $thread_id = create_thread_from_message!($ctx, $channel_id, $message_id, $thread_name);
         send_message_with_leaderboard!(
             $ctx,
             &$state.guilds,
@@ -124,7 +133,7 @@ macro_rules! create_thread_from_message {
             $thread_id.ok_or("Failed to create thread")?,
             &$data.users,
             construct_format_message!(
-                $message.push("Share your solution in the format below to earn points\n")
+                $message.push_line("Share your solution in the format below to earn points")
             )
             .push_line('\n')
         )

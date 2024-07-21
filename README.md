@@ -15,10 +15,12 @@ You can change it by running the following command
 Some other commands you can run are
 
 * `/help`: Shows this help message, can be run anywhere
+* `/reset`: Reset the database for this discord server, can be run anywhere
 * `/random [free | paid | easy | medium | hard] ...`: Send a random question with optional fields to filter by difficulty or whether it is subscription only, can be run anywhere but if not run in a thread it will create a thread for it
 * `/scores`: Shows the current leaderboard, has to be run in either today's thread or the default channel
 * `/top [number]`: Shows the top 3 or any number up to 10 scores and monthly records across all servers, has to be run in the current thread
 * `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current thread
+* `/daily`: Resend the daily remainder, can be run anywhere
 * `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off, can be run anywhere
 
 To share your code you have to put it a spoiler tag and wrap it with \```code\``` so others can't immediately see your solution. You can start from the template below and replace the language and code with your own. If you didn't follow the format strictly simply send it again

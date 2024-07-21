@@ -484,7 +484,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                         state,
                                         guild_id,
                                         data,
-                                        &mut MessageBuilder::new()
+                                        MessageBuilder::new()
                                     );
                                 }
                                 construct_active_message!(message, active, args[1], bot, true)
@@ -505,6 +505,16 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 .await?;
         } else if msg.content == "/help" {
             send_help_message!(ctx, message, bot, msg.channel_id, channel, data.thread_id);
+        } else if msg.content == "/reset" {
+            let channel_id = data.channel_id;
+            **data = default_data(data.users.keys().copied().collect::<Vec<_>>())?;
+            data.channel_id = channel_id;
+            msg.channel_id.say(ctx, "Database has been reset").await?;
+        } else if msg.content == "/daily" {
+            for status in data.users.values_mut() {
+                status.submitted = None;
+            }
+            send_daily_message_with_leaderboard!(ctx, state, guild_id, data, message);
         } else if msg.content.starts_with("/random") {
             send_random_leetcode_question_message(
                 ctx,
@@ -860,6 +870,32 @@ pub async fn vote(ctx: &Context, interaction: Interaction) -> Result<(), Box<dyn
     Ok(())
 }
 
+fn default_data(users: Vec<UserId>) -> Result<Data, Box<dyn Error>> {
+    Ok(Data {
+        users: users
+            .iter()
+            .map(|&user_id| {
+                (
+                    user_id,
+                    Status {
+                        voted_for: None,
+                        submitted: None,
+                        weekly_submissions: 0,
+                        monthly_record: 0,
+                        score: 0,
+                    },
+                )
+            })
+            .collect(),
+        channel_id: None,
+        thread_id: None,
+        weekly_id: None,
+        poll_id: None,
+        active_weekly: true,
+        active_daily: true,
+    })
+}
+
 pub async fn initialise_guild(
     ctx: &Context,
     guild: Guild,
@@ -868,8 +904,8 @@ pub async fn initialise_guild(
     let mut data = ctx.data.write().await;
     let state = get_shared_state!(data);
     if !state.database.contains_key(&guild.id) {
-        let mut data = Data {
-            users: guild
+        let mut data = default_data(
+            guild
                 .id
                 .members(&ctx.http, None, None)
                 .await?
@@ -879,26 +915,11 @@ pub async fn initialise_guild(
                     if user.bot {
                         None
                     } else {
-                        Some((
-                            user.id,
-                            Status {
-                                voted_for: None,
-                                submitted: None,
-                                weekly_submissions: 0,
-                                monthly_record: 0,
-                                score: 0,
-                            },
-                        ))
+                        Some(user.id)
                     }
                 })
-                .collect(),
-            channel_id: None,
-            thread_id: None,
-            weekly_id: None,
-            poll_id: None,
-            active_weekly: true,
-            active_daily: true,
-        };
+                .collect::<Vec<_>>(),
+        )?;
         for channel in guild.channels.values() {
             if channel.kind == ChannelType::Text {
                 data.channel_id = Some(channel.id);
@@ -911,7 +932,7 @@ pub async fn initialise_guild(
                     state,
                     guild_id,
                     data,
-                    MessageBuilder::new().push_line('\n')
+                    MessageBuilder::new()
                 );
                 send_random_leetcode_question_message(ctx, channel.id, vec![]).await?;
                 state.database.insert(*guild_id, data);
