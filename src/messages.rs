@@ -30,7 +30,6 @@ macro_rules! send_help_message {
             * `/scores`: Shows the current leaderboard
             * `/top [number]`: Shows the top 3 or any number up to 10 scores and monthly records across all servers
             * `/poll`: Start a poll for today's submissions or reply to an existing one if it has already started, has to be run in the current daily thread
-            * `/daily`: Resend the daily remainder
             * `/active [weekly|daily] [toggle]`: Check whether some features of the bot are currently active or toggle them on and off
         ")
         .push("To share your code you have to put it in a spoiler tag and wrap it with ")
