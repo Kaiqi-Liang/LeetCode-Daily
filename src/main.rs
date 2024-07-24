@@ -24,9 +24,7 @@ impl EventHandler for Handler {
     }
 
     async fn ready(&self, ctx: Context, ready: Ready) {
-        if let Err(why) = setup(&ctx, ready).await {
-            log!("Error setting up: {why}");
-        } else {
+        if let Ok(()) = setup(&ctx, ready).await {
             schedule_thread!(ctx, schedule_daily_question);
             schedule_thread!(ctx, schedule_weekly_contest);
         }
