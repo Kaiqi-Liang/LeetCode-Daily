@@ -1,4 +1,13 @@
 #[macro_export]
+macro_rules! save_to_database {
+    ($ctx:ident) => {
+        if let Err(why) = save_to_database($ctx).await {
+            log!("Error saving to database: {why}");
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! schedule_thread {
     ($ctx:ident, $schedule:ident) => {{
         let ctx = $ctx.clone();

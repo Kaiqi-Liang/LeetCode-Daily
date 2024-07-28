@@ -17,9 +17,7 @@ impl EventHandler for Handler {
             if let Err(why) = initialise_guild(&ctx, guild, bot).await {
                 log!("Error initialising guild: {why}");
             }
-            if let Err(why) = save_to_database(ctx).await {
-                log!("Error saving to database: {why}");
-            }
+            save_to_database!(ctx);
         }
     }
 
@@ -36,9 +34,7 @@ impl EventHandler for Handler {
             if let Err(why) = respond(&ctx, msg, bot).await {
                 log!("Error responding to messages: {why}");
             }
-            if let Err(why) = save_to_database(ctx).await {
-                log!("Error saving to database: {why}");
-            }
+            save_to_database!(ctx);
         }
     }
 
@@ -46,9 +42,7 @@ impl EventHandler for Handler {
         if let Err(why) = vote(&ctx, interaction).await {
             log!("Error responding to vote interaction: {why}");
         }
-        if let Err(why) = save_to_database(ctx).await {
-            log!("Error saving to database: {why}");
-        }
+        save_to_database!(ctx);
     }
 }
 
