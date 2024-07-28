@@ -30,7 +30,7 @@ type Users = HashMap<UserId, User>;
 type Database = HashMap<GuildId, Data>;
 type UserInfo = HashMap<UserId, Status>;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Default, Serialize, Deserialize, Clone)]
 pub struct Data {
     users: UserInfo,
     channel_id: Option<ChannelId>,
@@ -47,6 +47,7 @@ struct Status {
     submitted: Option<String>,
     weekly_submissions: usize,
     monthly_record: u32,
+    days_missed: u32,
     score: usize,
 }
 
@@ -280,6 +281,7 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                 }
                 if user.submitted.is_none() {
                     penalties += 1;
+                    user.days_missed += 1;
                     if user.score > 0 {
                         user.score -= 1;
                     }
@@ -507,7 +509,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
             send_help_message!(ctx, message, bot, msg.channel_id, channel, data.thread_id);
         } else if msg.content == "/reset" {
             let channel_id = data.channel_id;
-            **data = default_data(data.users.keys().copied().collect::<Vec<_>>())?;
+            **data = default_data(data.users.keys().copied().collect::<Vec<_>>());
             data.channel_id = channel_id;
             msg.channel_id.say(ctx, "Database has been reset").await?;
         } else if msg.content == "/daily" {
@@ -613,7 +615,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 if user.submitted.is_none() {
                     user.submitted = Some(msg.link());
                     let hour = time_till_utc_midnight()?.num_hours();
-                    let score: usize = if hour == 23 {
+                    let mut score: usize = if hour == 23 {
                         5
                     } else if hour >= 21 {
                         4
@@ -624,16 +626,30 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                     } else {
                         1
                     };
-                    user.score += score;
                     user.monthly_record += 1;
                     construct_summary_message!(
                         construct_reward_message!(
-                            construct_congrats_message!(message, state, guild_id, user_id)
-                                .push("completing today's challenge!"),
+                            construct_congrats_message!(message, state, guild_id, user_id).push(
+                                format!(
+                                    "completing today's challenge{}!",
+                                    if user.days_missed > 7 {
+                                        score += 5;
+                                        user.score += score;
+                                        format!(
+                                            " and welcome back after missing it for {} days",
+                                            user.days_missed
+                                        )
+                                    } else {
+                                        user.score += score;
+                                        String::new()
+                                    }
+                                )
+                            ),
                             score
                         ),
                         user
                     );
+                    user.days_missed = 0;
                     if user.monthly_record == num_days_curr_month()? {
                         construct_badge_message!(message.push("Great job"), Utc::now());
                     }
@@ -698,21 +714,16 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                             )
                         };
                         user.score += score;
-                        construct_summary_message!(
-                            construct_reward_message!(
-                                construct_congrats_message!(message, state, guild_id, user_id)
-                                    .push(result)
-                                    .push_bold(bold_text)
-                                    .push(format!("{end} in the contest!")),
-                                score
-                            ),
-                            user
-                        );
+                        construct_reward_message!(
+                            construct_congrats_message!(message, state, guild_id, user_id)
+                                .push(result)
+                                .push_bold(bold_text)
+                                .push(format!("{end} in the contest!")),
+                            score
+                        )
+                        .push(". Your current score is ")
+                        .push_bold(user.score.to_string());
                         weekly_id.say(&ctx.http, message.build()).await?;
-                    } else {
-                        weekly_id
-                            .say(&ctx.http, "You have already completed the contest")
-                            .await?;
                     }
                 }
             }
@@ -862,30 +873,16 @@ pub async fn vote(ctx: &Context, interaction: Interaction) -> Result<(), Box<dyn
     Ok(())
 }
 
-fn default_data(users: Vec<UserId>) -> Result<Data, Box<dyn Error>> {
-    Ok(Data {
+fn default_data(users: Vec<UserId>) -> Data {
+    Data {
         users: users
             .iter()
-            .map(|&user_id| {
-                (
-                    user_id,
-                    Status {
-                        voted_for: None,
-                        submitted: None,
-                        weekly_submissions: 0,
-                        monthly_record: 0,
-                        score: 0,
-                    },
-                )
-            })
+            .map(|&user_id| (user_id, Status::default()))
             .collect(),
-        channel_id: None,
-        thread_id: None,
-        weekly_id: None,
-        poll_id: None,
-        active_weekly: true,
         active_daily: true,
-    })
+        active_weekly: true,
+        ..Default::default()
+    }
 }
 
 pub async fn initialise_guild(
@@ -911,7 +908,7 @@ pub async fn initialise_guild(
                     }
                 })
                 .collect::<Vec<_>>(),
-        )?;
+        );
         for channel in guild.channels.values() {
             if channel.kind == ChannelType::Text {
                 data.channel_id = Some(channel.id);
