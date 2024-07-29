@@ -681,9 +681,9 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         message
                             .push("Everyone has finished today's challenge, let's Grow Together!");
                     }
+                    data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
+                    msg.channel_id.say(&ctx.http, message.build()).await?;
                 }
-                data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
-                msg.channel_id.say(&ctx.http, message.build()).await?;
             } else if data.active_weekly {
                 if let Some(weekly_id) = data
                     .weekly_id
