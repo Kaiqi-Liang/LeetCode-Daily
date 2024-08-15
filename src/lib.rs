@@ -83,12 +83,12 @@ fn construct_leaderboard<'a>(
     message.push_line("The current leaderboard:");
     let mut leaderboard = users
         .iter()
-        .map(|(id, user)| {
-            (
-                get_user_from_id!(guilds, guild_id, id),
-                user.score,
-                user.monthly_record,
-            )
+        .filter_map(|(id, status)| {
+            if let Ok(user) = get_user_from_id!(guilds, guild_id, id) {
+                Some((user, status.score, status.monthly_record))
+            } else {
+                None
+            }
         })
         .collect::<Vec<_>>();
     leaderboard.sort_by(|a, b| {
@@ -303,14 +303,16 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
             } else {
                 votes.sort_by(|a, b| b.1.cmp(a.1));
                 for (place, (user_id, &votes)) in votes.into_iter().enumerate() {
-                    get_user_from_id!(data.users, *user_id).score += votes;
-                    message
-                        .push((place + 1).to_string())
-                        .push(". ")
-                        .mention(get_user_from_id!(state.guilds, guild_id, user_id))
-                        .push(": ")
-                        .push_bold(votes.to_string())
-                        .push_line("");
+                    if let Ok(user) = get_user_from_id!(state.guilds, guild_id, user_id) {
+                        get_user_from_id!(data.users, *user_id).score += votes;
+                        message
+                            .push((place + 1).to_string())
+                            .push(". ")
+                            .mention(user)
+                            .push(": ")
+                            .push_bold(votes.to_string())
+                            .push_line("");
+                    }
                 }
             }
             send_daily_message_with_leaderboard!(ctx, state, guild_id, data, message.push('\n'));
@@ -386,14 +388,13 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
             let mut submissions = guild
                 .users
                 .iter()
-                .filter_map(|(user_id, user)| {
-                    if user.weekly_submissions == 0 {
+                .filter_map(|(user_id, status)| {
+                    if status.weekly_submissions == 0 {
                         None
+                    } else if let Ok(user) = get_user_from_id!(state.guilds, guild_id, user_id) {
+                        Some((user, status.weekly_submissions))
                     } else {
-                        Some((
-                            get_user_from_id!(state.guilds, guild_id, user_id),
-                            user.weekly_submissions,
-                        ))
+                        None
                     }
                 })
                 .collect::<Vec<_>>();
@@ -659,8 +660,10 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         .filter_map(|(id, user)| {
                             if user.submitted.is_some() {
                                 None
+                            } else if let Ok(user) = get_user_from_id!(state.guilds, guild_id, id) {
+                                Some(user)
                             } else {
-                                Some(get_user_from_id!(state.guilds, guild_id, id))
+                                None
                             }
                         })
                         .collect::<Vec<_>>();
@@ -774,9 +777,9 @@ fn build_submission_message(guild: &Data, guilds: &Guilds, guild_id: &GuildId) -
     let mut message = MessageBuilder::new();
     message.push_line("Choose your favourite submission");
     for (id, status) in guild.users.iter() {
-        if let Some(submitted) = &status.submitted {
+        if let (Some(submitted), Ok(user)) = (&status.submitted, get_user_from_id!(guilds, guild_id, id)) {
             message
-                .mention(get_user_from_id!(guilds, guild_id, id))
+                .mention(user)
                 .push_line(submitted);
         }
     }
@@ -864,7 +867,7 @@ pub async fn vote(ctx: &Context, interaction: Interaction) -> Result<(), Box<dyn
                     component,
                     format!(
                         "Successfully voted for {}",
-                        get_user_from_id!(state.guilds, guild_id, voted_for)
+                        get_user_from_id!(state.guilds, guild_id, voted_for)?
                     )
                 );
             }

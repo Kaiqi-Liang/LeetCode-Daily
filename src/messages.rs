@@ -143,7 +143,7 @@ macro_rules! construct_congrats_message {
     ($message:expr, $state:ident, $guild_id:ident, $user_id:ident) => {
         $message
             .push("Congrats to ")
-            .mention(get_user_from_id!($state.guilds, $guild_id, $user_id))
+            .mention(get_user_from_id!($state.guilds, $guild_id, $user_id)?)
             .push(" for ")
     };
 }

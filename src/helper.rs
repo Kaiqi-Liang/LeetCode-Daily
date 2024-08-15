@@ -67,7 +67,7 @@ macro_rules! get_user_from_id {
             .get($guild_id)
             .expect("Guild does not exist")
             .get($user_id)
-            .expect("User does not exist")
+            .ok_or("User does not exist")
     };
     ($users:expr, $user_id:expr) => {
         $users.entry($user_id).or_insert(Status::default())
