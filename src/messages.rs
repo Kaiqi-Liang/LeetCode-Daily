@@ -63,7 +63,7 @@ macro_rules! construct_badge_message {
 
 #[macro_export]
 macro_rules! send_daily_message_with_leaderboard {
-    ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr) => {
+    ($ctx:ident, $state:expr, $guild_id:ident, $data:ident, $message:expr) => {
         let channel_id = get_channel_from_guild!($data);
         $data.poll_id = None;
         let message_id = send_leetcode_daily_question_message($ctx, channel_id)
@@ -122,11 +122,11 @@ macro_rules! create_thread_from_message {
             .map(|channel| channel.id)
             .ok()
     };
-    ($ctx:ident, $state:ident, $guild_id:ident, $data:ident, $message:expr, $channel_id:ident, $message_id:ident, $thread_id:expr, $thread_name:expr) => {
+    ($ctx:ident, $state:expr, $guild_id:ident, $data:ident, $message:expr, $channel_id:ident, $message_id:ident, $thread_id:expr, $thread_name:expr) => {
         $thread_id = create_thread_from_message!($ctx, $channel_id, $message_id, $thread_name);
         send_message_with_leaderboard!(
             $ctx,
-            &$state.guilds,
+            &mut $state.guilds,
             $guild_id,
             $thread_id.ok_or("Failed to create thread")?,
             &$data.users,
@@ -143,7 +143,7 @@ macro_rules! construct_congrats_message {
     ($message:expr, $state:ident, $guild_id:ident, $user_id:ident) => {
         $message
             .push("Congrats to ")
-            .mention(get_user_from_id!($state.guilds, $guild_id, $user_id)?)
+            .mention(get_user_from_id!($state.guilds, $guild_id, $user_id))
             .push(" for ")
     };
 }

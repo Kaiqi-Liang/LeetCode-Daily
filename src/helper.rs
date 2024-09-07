@@ -42,7 +42,7 @@ macro_rules! get_thread_from_guild {
 
 #[macro_export]
 macro_rules! write_to_database {
-    ($state:ident) => {
+    ($state:expr) => {
         $state.file.seek(SeekFrom::Start(0))?;
         $state.file.set_len(0)?;
         $state
@@ -64,10 +64,10 @@ macro_rules! get_shared_state {
 macro_rules! get_user_from_id {
     ($guilds:expr, $guild_id:ident, $user_id:ident) => {
         $guilds
-            .get($guild_id)
+            .get_mut($guild_id)
             .expect("Guild does not exist")
-            .get($user_id)
-            .ok_or("User does not exist")
+            .entry(*$user_id)
+            .or_insert(User::default())
     };
     ($users:expr, $user_id:expr) => {
         $users.entry($user_id).or_insert(Status::default())

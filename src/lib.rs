@@ -27,8 +27,8 @@ use tokio::time::sleep;
 
 type Guilds = HashMap<GuildId, Users>;
 type Users = HashMap<UserId, User>;
-type Database = HashMap<GuildId, Data>;
 type UserInfo = HashMap<UserId, Status>;
+pub type Database = HashMap<GuildId, Data>;
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct Data {
@@ -76,19 +76,19 @@ pub async fn save_to_database(ctx: Context) -> Result<(), Box<dyn Error>> {
 
 fn construct_leaderboard<'a>(
     users: &UserInfo,
-    guilds: &Guilds,
+    guilds: &mut Guilds,
     guild_id: &GuildId,
     message: &'a mut MessageBuilder,
 ) -> &'a mut MessageBuilder {
     message.push_line("The current leaderboard:");
     let mut leaderboard = users
         .iter()
-        .filter_map(|(id, status)| {
-            if let Ok(user) = get_user_from_id!(guilds, guild_id, id) {
-                Some((user, status.score, status.monthly_record))
-            } else {
-                None
-            }
+        .map(|(id, status)| {
+            (
+                get_user_from_id!(guilds, guild_id, id).clone(),
+                status.score,
+                status.monthly_record,
+            )
         })
         .collect::<Vec<_>>();
     leaderboard.sort_by(|a, b| {
@@ -202,11 +202,11 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
                 if !data.active_daily {
                     continue;
                 }
-                data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
+                data.poll_id = Some(poll(ctx, data, &mut state.guilds, guild_id).await?.id);
                 if data.poll_id.is_some() {
                     send_message_with_leaderboard!(
                         ctx,
-                        &state.guilds,
+                        &mut state.guilds,
                         guild_id,
                         get_thread_from_guild!(data),
                         &data.users,
@@ -303,16 +303,15 @@ pub async fn schedule_daily_question(ctx: &Context) -> Result<(), Box<dyn Error>
             } else {
                 votes.sort_by(|a, b| b.1.cmp(a.1));
                 for (place, (user_id, &votes)) in votes.into_iter().enumerate() {
-                    if let Ok(user) = get_user_from_id!(state.guilds, guild_id, user_id) {
-                        get_user_from_id!(data.users, *user_id).score += votes;
-                        message
-                            .push((place + 1).to_string())
-                            .push(". ")
-                            .mention(user)
-                            .push(": ")
-                            .push_bold(votes.to_string())
-                            .push_line("");
-                    }
+                    let user = get_user_from_id!(state.guilds, guild_id, user_id);
+                    get_user_from_id!(data.users, *user_id).score += votes;
+                    message
+                        .push((place + 1).to_string())
+                        .push(". ")
+                        .mention(user)
+                        .push(": ")
+                        .push_bold(votes.to_string())
+                        .push_line("");
                 }
             }
             send_daily_message_with_leaderboard!(ctx, state, guild_id, data, message.push('\n'));
@@ -391,10 +390,11 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
                 .filter_map(|(user_id, status)| {
                     if status.weekly_submissions == 0 {
                         None
-                    } else if let Ok(user) = get_user_from_id!(state.guilds, guild_id, user_id) {
-                        Some((user, status.weekly_submissions))
                     } else {
-                        None
+                        Some((
+                            get_user_from_id!(state.guilds, guild_id, user_id).clone(),
+                            status.weekly_submissions,
+                        ))
                     }
                 })
                 .collect::<Vec<_>>();
@@ -406,7 +406,7 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
                     message
                         .push((place + 1).to_string())
                         .push(". ")
-                        .mention(user)
+                        .mention(&user)
                         .push(" completed ")
                         .push_bold(submission.to_string())
                         .push_line(if submission > 1 {
@@ -422,7 +422,7 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
             if let Some(weekly_id) = guild.weekly_id {
                 send_message_with_leaderboard!(
                     ctx,
-                    &state.guilds,
+                    &mut state.guilds,
                     guild_id,
                     weekly_id,
                     &guild.users,
@@ -577,7 +577,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
         } else if msg.content == "/scores" {
             send_message_with_leaderboard!(
                 ctx,
-                &state.guilds,
+                &mut state.guilds,
                 guild_id,
                 msg.channel_id,
                 &data.users,
@@ -660,10 +660,8 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         .filter_map(|(id, user)| {
                             if user.submitted.is_some() {
                                 None
-                            } else if let Ok(user) = get_user_from_id!(state.guilds, guild_id, id) {
-                                Some(user)
                             } else {
-                                None
+                                Some(get_user_from_id!(state.guilds, guild_id, id).clone())
                             }
                         })
                         .collect::<Vec<_>>();
@@ -674,7 +672,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                 poll_id,
                                 EditMessage::new().content(build_submission_message(
                                     data,
-                                    &state.guilds,
+                                    &mut state.guilds,
                                     guild_id,
                                 )),
                             )
@@ -684,7 +682,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                         message
                             .push("Everyone has finished today's challenge, let's Grow Together!");
                     }
-                    data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
+                    data.poll_id = Some(poll(ctx, data, &mut state.guilds, guild_id).await?.id);
                     msg.channel_id.say(&ctx.http, message.build()).await?;
                 }
             } else if data.active_weekly {
@@ -762,7 +760,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                     channel.say(&ctx.http, message.build()).await?;
                 }
             } else if msg.content == "/poll" && msg.channel_id == thread && data.active_daily {
-                data.poll_id = Some(poll(ctx, data, &state.guilds, guild_id).await?.id);
+                data.poll_id = Some(poll(ctx, data, &mut state.guilds, guild_id).await?.id);
             }
         }
     } else {
@@ -773,13 +771,13 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
     Ok(())
 }
 
-fn build_submission_message(guild: &Data, guilds: &Guilds, guild_id: &GuildId) -> String {
+fn build_submission_message(guild: &Data, guilds: &mut Guilds, guild_id: &GuildId) -> String {
     let mut message = MessageBuilder::new();
     message.push_line("Choose your favourite submission");
     for (id, status) in guild.users.iter() {
-        if let (Some(submitted), Ok(user)) = (&status.submitted, get_user_from_id!(guilds, guild_id, id)) {
+        if let Some(submitted) = &status.submitted {
             message
-                .mention(user)
+                .mention(get_user_from_id!(guilds, guild_id, id))
                 .push_line(submitted);
         }
     }
@@ -789,7 +787,7 @@ fn build_submission_message(guild: &Data, guilds: &Guilds, guild_id: &GuildId) -
 async fn poll(
     ctx: &Context,
     guild: &Data,
-    guilds: &Guilds,
+    guilds: &mut Guilds,
     guild_id: &GuildId,
 ) -> Result<Message, Box<dyn Error>> {
     let thread = get_thread_from_guild!(guild);
@@ -867,7 +865,7 @@ pub async fn vote(ctx: &Context, interaction: Interaction) -> Result<(), Box<dyn
                     component,
                     format!(
                         "Successfully voted for {}",
-                        get_user_from_id!(state.guilds, guild_id, voted_for)?
+                        get_user_from_id!(state.guilds, guild_id, voted_for)
                     )
                 );
             }
