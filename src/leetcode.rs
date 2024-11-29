@@ -187,7 +187,7 @@ async fn fetch_all_questions() -> Arc<Result<ProblemsetQuestionListResponse, req
 }
 
 fn create_embed(question: &Question, link: String) -> CreateEmbed {
-    let title = format!("{}. {}", question.frontend_question_id, question.title);
+    let title = format!("{}. {}", question.frontend_question_id, question.title.trim());
     let url = format!("{}{}", URL, link);
     let colour = match question.difficulty.as_str() {
         "Easy" => Colour::DARK_GREEN,
@@ -276,6 +276,7 @@ pub async fn send_random_leetcode_question_message(
                                 "/problems/{}",
                                 question
                                     .title
+                                    .trim()
                                     .replace(' ', "-")
                                     .chars()
                                     .filter(|&ch| ch.is_alphanumeric() || ch == '-')
@@ -285,7 +286,7 @@ pub async fn send_random_leetcode_question_message(
                 )
                 .await?
                 .id;
-            create_thread_from_message!(ctx, channel_id, message_id, question.title.clone());
+            create_thread_from_message!(ctx, channel_id, message_id, question.title.trim().clone());
         } else {
             channel_id
                 .say(ctx, "No question found that fits your requirement")
