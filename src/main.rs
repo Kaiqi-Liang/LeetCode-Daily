@@ -81,6 +81,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open("database.json")?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
