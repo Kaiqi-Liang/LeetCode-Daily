@@ -18,9 +18,9 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn guild_create(&self, ctx: Context, guild: Guild, _is_new: Option<bool>) {
-        let bot = ctx.cache.current_user().id;
+        let current_user_id = ctx.cache.current_user().id;
         if _is_new == Some(true) {
-            if let Err(why) = initialise_guild(&ctx, guild, bot).await {
+            if let Err(why) = initialise_guild(&ctx, guild, current_user_id).await {
                 log!("Error initialising guild: {why}");
             }
             save_to_database!(ctx);
@@ -28,16 +28,17 @@ impl EventHandler for Handler {
     }
 
     async fn ready(&self, ctx: Context, ready: Ready) {
-        if let Ok(()) = setup(&ctx, ready).await {
+        if setup(&ctx, ready).await.is_ok() {
             schedule_thread!(ctx, schedule_daily_question);
             schedule_thread!(ctx, schedule_weekly_contest);
+            save_to_database!(ctx);
         }
     }
 
     async fn message(&self, ctx: Context, msg: Message) {
-        let bot = ctx.cache.current_user().id;
-        if msg.author.id != bot {
-            if let Err(why) = respond(&ctx, msg, bot).await {
+        let current_user_id = ctx.cache.current_user().id;
+        if msg.author.id != current_user_id {
+            if let Err(why) = respond(&ctx, msg, current_user_id).await {
                 log!("Error responding to messages: {why}");
             }
             save_to_database!(ctx);
@@ -85,6 +86,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .open("database.json")?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
+        if contents.is_empty() {
+            contents = String::from("{}");
+        }
         let mut data = client.data.write().await;
         data.insert::<State>(SharedState {
             ready: false,

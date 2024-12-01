@@ -12,14 +12,14 @@ macro_rules! send_message_with_leaderboard {
 
 #[macro_export]
 macro_rules! send_help_message {
-    ($ctx:ident, $message:expr, $bot:ident, $channel:expr, $default_channel:expr, $thread:expr) => {
+    ($ctx:ident, $message:expr, $user_id:ident, $channel:expr, $default_channel:expr, $thread:expr) => {
         $channel.say(&$ctx.http, construct_format_message!(
         construct_channel_message!(
             $message
                 .push("Hi I'm LeetCode Daily, here to motivate you to do ")
                 .push_named_link("LeetCode", "https://leetcode.com/problemset")
                 .push_line(" questions every single day 🤓\n\nI operate on a default channel and I create a thread in that channel when a new daily question comes out"),
-            $bot,
+            $user_id,
             $default_channel,
             $thread
         )
@@ -187,11 +187,11 @@ macro_rules! construct_thread_message {
 
 #[macro_export]
 macro_rules! construct_channel_message {
-    ($message:expr, $bot:ident, $channel:expr, $thread:expr) => {
+    ($message:expr, $user_id:ident, $channel:expr, $thread:expr) => {
         construct_thread_message!(
             $message
                 .push("The default channel for ")
-                .mention(&$bot)
+                .mention(&$user_id)
                 .push(" is ")
                 .channel($channel)
                 .push("\nYou can change it by using the following command")
@@ -203,8 +203,8 @@ macro_rules! construct_channel_message {
 
 #[macro_export]
 macro_rules! construct_active_message {
-    ($message:ident, $active:ident, $arg:expr, $bot:ident, $now:expr) => {
-        Some($message.mention(&$bot).push(format!(
+    ($message:ident, $active:ident, $arg:expr, $user_id:ident, $now:expr) => {
+        Some($message.mention(&$user_id).push(format!(
             " is {}{} for {}",
             if $now { "now " } else { "" },
             if *$active { "active" } else { "paused" },

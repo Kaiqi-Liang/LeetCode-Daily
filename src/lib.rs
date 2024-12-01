@@ -155,6 +155,7 @@ async fn initialise_guilds(
     state: &mut SharedState,
 ) -> Result<(), Box<dyn Error>> {
     let members = guild_id.members(&ctx.http, None, None).await?;
+    state.database.entry(*guild_id).or_default();
     state.guilds.insert(
         *guild_id,
         members
@@ -435,7 +436,7 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
     }
 }
 
-pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box<dyn Error>> {
+pub async fn respond(ctx: &Context, msg: Message, current_user_id: UserId) -> Result<(), Box<dyn Error>> {
     if let Some(guild_id) = &msg.guild_id {
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
@@ -452,7 +453,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                     (if let Some(message_builder) = match args.len() {
                         1 => {
                             if msg.content == "/active" {
-                                Some(message.mention(&bot).push(
+                                Some(message.mention(&current_user_id).push(
                                     if data.active_weekly && data.active_daily {
                                         " is active for both weekly and daily"
                                     } else if data.active_weekly {
@@ -472,7 +473,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                 None
                             } else {
                                 let active = get_active!(data, args[1]);
-                                construct_active_message!(message, active, args[1], bot, false)
+                                construct_active_message!(message, active, args[1], current_user_id, false)
                             }
                         }
                         3 => {
@@ -490,7 +491,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                                         MessageBuilder::new()
                                     );
                                 }
-                                construct_active_message!(message, active, args[1], bot, true)
+                                construct_active_message!(message, active, args[1], current_user_id, true)
                             } else {
                                 None
                             }
@@ -507,7 +508,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 )
                 .await?;
         } else if msg.content == "/help" {
-            send_help_message!(ctx, message, bot, msg.channel_id, channel, data.thread_id);
+            send_help_message!(ctx, message, current_user_id, msg.channel_id, channel, data.thread_id);
         } else if msg.content == "/reset" {
             let channel_id = data.channel_id;
             **data = default_data(data.users.keys().copied().collect::<Vec<_>>());
@@ -604,7 +605,7 @@ pub async fn respond(ctx: &Context, msg: Message, bot: UserId) -> Result<(), Box
                 msg.channel_id
                     .say(
                         &ctx.http,
-                        construct_channel_message!(message, bot, channel, data.thread_id).build(),
+                        construct_channel_message!(message, current_user_id, channel, data.thread_id).build(),
                     )
                     .await?;
             } else {
@@ -889,7 +890,7 @@ fn default_data(users: Vec<UserId>) -> Data {
 pub async fn initialise_guild(
     ctx: &Context,
     guild: Guild,
-    bot: UserId,
+    current_user_id: UserId,
 ) -> Result<(), Box<dyn Error>> {
     let mut data = ctx.data.write().await;
     let state = get_shared_state!(data);
@@ -916,7 +917,7 @@ pub async fn initialise_guild(
                 let guild_id = &guild.id;
                 initialise_guilds(ctx, guild_id, state).await?;
                 let mut message = MessageBuilder::new();
-                send_help_message!(ctx, message, bot, channel, channel.id, data.thread_id);
+                send_help_message!(ctx, message, current_user_id, channel, channel.id, data.thread_id);
                 send_daily_message_with_leaderboard!(
                     ctx,
                     state,
