@@ -164,7 +164,6 @@ async fn initialise_guilds(
     state: &mut SharedState,
 ) -> Result<(), Box<dyn Error>> {
     let members = guild_id.members(&ctx.http, None, None).await?;
-    state.database.entry(*guild_id).or_default();
     state.guilds.insert(
         *guild_id,
         members
@@ -192,7 +191,9 @@ pub async fn setup(ctx: &Context, ready: Ready) -> Result<(), Box<dyn Error>> {
         let guilds = ready.guilds;
         log!("Setting up guilds {guilds:?}");
         for guild in guilds {
-            initialise_guilds(ctx, &guild.id, state).await?;
+            if state.database.contains_key(&guild.id) {
+                initialise_guilds(ctx, &guild.id, state).await?;
+            }
         }
         Ok(())
     }
