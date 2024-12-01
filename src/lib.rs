@@ -66,6 +66,7 @@ impl TypeMapKey for State {
 const CUSTOM_ID: &str = "favourite_submission";
 const POLL_ERROR_MESSAGE: &str = "Poll message is not in this channel";
 const NUM_SECS_IN_AN_HOUR: u64 = chrono::Duration::minutes(60).num_seconds() as _;
+const NUM_MONTHS_IN_A_YEAR: u32 = 12;
 
 pub async fn save_to_database(ctx: Context) -> Result<(), Box<dyn Error>> {
     let mut data = ctx.data.write().await;
@@ -138,11 +139,19 @@ fn time_till_utc_midnight() -> Result<TimeDelta, Box<dyn Error>> {
 
 fn num_days_curr_month() -> Result<u32, Box<dyn Error>> {
     let now = Utc::now();
+    let curr_month = now.month();
     let this_month = Utc
-        .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
+        .with_ymd_and_hms(now.year(), curr_month, 1, 0, 0, 0)
         .unwrap();
     let next_month = Utc
-        .with_ymd_and_hms(now.year(), now.month() + 1, 1, 0, 0, 0)
+        .with_ymd_and_hms(
+            now.year() + (curr_month / NUM_MONTHS_IN_A_YEAR) as i32,
+            (curr_month + 1) % NUM_MONTHS_IN_A_YEAR,
+            1,
+            0,
+            0,
+            0,
+        )
         .unwrap();
     Ok(TryInto::<u32>::try_into(
         next_month.signed_duration_since(this_month).num_days(),
@@ -436,7 +445,11 @@ pub async fn schedule_weekly_contest(ctx: &Context) -> Result<(), Box<dyn Error>
     }
 }
 
-pub async fn respond(ctx: &Context, msg: Message, current_user_id: UserId) -> Result<(), Box<dyn Error>> {
+pub async fn respond(
+    ctx: &Context,
+    msg: Message,
+    current_user_id: UserId,
+) -> Result<(), Box<dyn Error>> {
     if let Some(guild_id) = &msg.guild_id {
         let mut data = ctx.data.write().await;
         let state = get_shared_state!(data);
@@ -473,7 +486,13 @@ pub async fn respond(ctx: &Context, msg: Message, current_user_id: UserId) -> Re
                                 None
                             } else {
                                 let active = get_active!(data, args[1]);
-                                construct_active_message!(message, active, args[1], current_user_id, false)
+                                construct_active_message!(
+                                    message,
+                                    active,
+                                    args[1],
+                                    current_user_id,
+                                    false
+                                )
                             }
                         }
                         3 => {
@@ -491,7 +510,13 @@ pub async fn respond(ctx: &Context, msg: Message, current_user_id: UserId) -> Re
                                         MessageBuilder::new()
                                     );
                                 }
-                                construct_active_message!(message, active, args[1], current_user_id, true)
+                                construct_active_message!(
+                                    message,
+                                    active,
+                                    args[1],
+                                    current_user_id,
+                                    true
+                                )
                             } else {
                                 None
                             }
@@ -508,7 +533,14 @@ pub async fn respond(ctx: &Context, msg: Message, current_user_id: UserId) -> Re
                 )
                 .await?;
         } else if msg.content == "/help" {
-            send_help_message!(ctx, message, current_user_id, msg.channel_id, channel, data.thread_id);
+            send_help_message!(
+                ctx,
+                message,
+                current_user_id,
+                msg.channel_id,
+                channel,
+                data.thread_id
+            );
         } else if msg.content == "/reset" {
             let channel_id = data.channel_id;
             **data = default_data(data.users.keys().copied().collect::<Vec<_>>());
@@ -605,7 +637,13 @@ pub async fn respond(ctx: &Context, msg: Message, current_user_id: UserId) -> Re
                 msg.channel_id
                     .say(
                         &ctx.http,
-                        construct_channel_message!(message, current_user_id, channel, data.thread_id).build(),
+                        construct_channel_message!(
+                            message,
+                            current_user_id,
+                            channel,
+                            data.thread_id
+                        )
+                        .build(),
                     )
                     .await?;
             } else {
@@ -917,7 +955,14 @@ pub async fn initialise_guild(
                 let guild_id = &guild.id;
                 initialise_guilds(ctx, guild_id, state).await?;
                 let mut message = MessageBuilder::new();
-                send_help_message!(ctx, message, current_user_id, channel, channel.id, data.thread_id);
+                send_help_message!(
+                    ctx,
+                    message,
+                    current_user_id,
+                    channel,
+                    channel.id,
+                    data.thread_id
+                );
                 send_daily_message_with_leaderboard!(
                     ctx,
                     state,
