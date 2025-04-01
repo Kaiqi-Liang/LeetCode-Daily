@@ -65,7 +65,7 @@ macro_rules! get_user_from_id {
     ($guilds:expr, $guild_id:ident, $user_id:ident) => {
         $guilds
             .get_mut($guild_id)
-            .expect("Cannot get user from Guild that does not exist in database")
+            .expect("Cannot get user from guild that does not exist in database")
             .entry(*$user_id)
             .or_insert(User::default())
     };
@@ -80,7 +80,7 @@ macro_rules! get_guild_from_id {
         &mut $state
             .database
             .get_mut(&$guild_id)
-            .ok_or("Cannot get Guild that does not exist in database")?
+            .ok_or("Cannot get guild that does not exist in database")?
     };
 }
 
